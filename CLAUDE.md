@@ -12,7 +12,8 @@
   - The behavior depends on the SDK of X's own binary, not the tweak's `sdk_version`. Raising the
     tweak's SDK in `build.yml` won't turn the rail on.
   - Current workaround: `BHTGlassTabRail` (`src/Hooks/Theme/Theme.m`) is a native glass rail on the
-    right edge when the window is at least 800pt wide. X's bar stays in the hierarchy but hidden, and
+    right edge everywhere except the unfolded screen held upright (`NFBGlassTabRailActive`: landscape,
+    or portrait narrower than `NFBGlassTabRailCompactWidth`), matching how Duo apps behave. X's bar stays in the hierarchy but hidden, and
     each rail button forwards its tap to X's own tab item (UIControl actions, else the tap
     recognizer's targets). The split columns leave `NFBGlassTabRailInset` (`src/Hooks/HookHelpers.h`) for it.
   - Rotating X's bar instead was tried and failed: X minimizes and animates the bar with its own
@@ -29,6 +30,8 @@
   user found more columns disorienting.
 - Back is a right swipe on the right column, with no close button. Posts never show the "Post" bar
   when Liquid Glass is on.
+- The right column hides the post until it sits at the first reply. The `split_view_loading_spinner`
+  setting shows the column straight away with a spinner over it instead.
 
 ## Builds
 

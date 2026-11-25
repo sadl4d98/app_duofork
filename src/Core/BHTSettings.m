@@ -33,7 +33,9 @@ static NSDictionary<NSString*, NSDictionary*>* BHTSettingsPages(void) {
                     @{@"key": @"show_scroll_indicator",
                       @"default": @NO},
                     @{@"key": @"ipad_split_view",
-                      @"default": @YES}
+                      @"default": @YES},
+                    @{@"key": @"split_view_loading_spinner",
+                      @"default": @NO}
                 ]
             },
             @"appearance": @{

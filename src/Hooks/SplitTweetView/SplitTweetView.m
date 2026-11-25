@@ -197,20 +197,46 @@ void BHTConversationWillDisappear(UIViewController* conversation, BOOL animated)
 // MARK: - Open the right column at the first reply
 
 static char BHTScrollToRepliesKey;
+static char BHTLoadingCoverKey;
 
-static void BHTRevealColumn(UIView* column) {
-    if (column.alpha >= 1.0) return;
+void BHTRevealColumn(UIView* column) {
+    UIView* cover = objc_getAssociatedObject(column, &BHTLoadingCoverKey);
+    objc_setAssociatedObject(column, &BHTLoadingCoverKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    if (column.alpha >= 1.0 && !cover) return;
     [UIView animateWithDuration:0.15
-                     animations:^{
-                         column.alpha = 1.0;
-                     }];
+        animations:^{
+            column.alpha = 1.0;
+            cover.alpha = 0.0;
+        }
+        completion:^(BOOL finished) {
+            [cover removeFromSuperview];
+        }];
 }
 
-// The column stays invisible until it sits at the first reply, so the post
-// never visibly loads and then jumps. A safety timer always shows it.
+// The post's content stays out of sight until it sits at the first reply, so
+// it never visibly loads and then jumps: either the whole column is blank, or
+// (with the setting) the column shows a spinner. A safety timer always reveals it.
 void BHTMarkScrollToReplies(UIViewController* conversation, UIView* column) {
     objc_setAssociatedObject(conversation, &BHTScrollToRepliesKey, column, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    column.alpha = 0.0;
+    [objc_getAssociatedObject(column, &BHTLoadingCoverKey) removeFromSuperview];
+    if ([BHTSettings boolForKey:@"split_view_loading_spinner"]) {
+        UIView* cover = [[UIView alloc] initWithFrame:column.bounds];
+        cover.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+        cover.backgroundColor = UIColor.systemBackgroundColor;
+        UIActivityIndicatorView* spinner =
+            [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
+        spinner.center = CGPointMake(CGRectGetMidX(cover.bounds), CGRectGetMidY(cover.bounds));
+        spinner.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin | UIViewAutoresizingFlexibleRightMargin |
+                                   UIViewAutoresizingFlexibleTopMargin | UIViewAutoresizingFlexibleBottomMargin;
+        [spinner startAnimating];
+        [cover addSubview:spinner];
+        [column addSubview:cover];
+        objc_setAssociatedObject(column, &BHTLoadingCoverKey, cover, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        column.alpha = 1.0;
+    } else {
+        objc_setAssociatedObject(column, &BHTLoadingCoverKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        column.alpha = 0.0;
+    }
     __weak UIView* weakColumn = column;
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         BHTRevealColumn(weakColumn);

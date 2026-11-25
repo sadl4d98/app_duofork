@@ -162,8 +162,9 @@ bool NFBLiquidGlassEnabled(void) {
 }
 
 BOOL NFBGlassTabRailActive(UIView* view) {
-    // Same 800pt threshold the split tweet column uses for "has room".
-    return NFBLiquidGlassEnabled() && view.window && CGRectGetWidth(view.window.bounds) >= 800.0;
+    if (!NFBLiquidGlassEnabled() || !view.window) return NO;
+    CGSize size = view.window.bounds.size;
+    return size.width > size.height || size.width < NFBGlassTabRailCompactWidth;
 }
 
 BOOL boolIvar(id object, const char* name, BOOL fallback) {

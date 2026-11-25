@@ -348,7 +348,7 @@
     [self.glassHost finishColumnAnimation];
     self.active = NO;
     self.collapsed = NO;
-    self.detail.viewIfLoaded.alpha = 1.0;
+    BHTRevealColumn(self.detail.viewIfLoaded);
     self.conversation = nil;
     self.primaryScreen = nil;
     self.primary = nil;
@@ -486,7 +486,7 @@
         NSArray* detailStack = self.detail.viewControllers;
         [self.detail setViewControllers:@[self.emptyController] animated:NO];
         self.collapsed = YES;
-        self.detail.viewIfLoaded.alpha = 1.0;
+        BHTRevealColumn(self.detail.viewIfLoaded);
         [primary setViewControllers:[primaryStack arrayByAddingObjectsFromArray:detailStack] animated:NO];
         [self setDetailVisible:NO];
         self.updating = NO;

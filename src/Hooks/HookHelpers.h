@@ -54,8 +54,12 @@ void applySquareAvatarsSetting(void);
 NSString* formatNumberWithSuffix(long long number);
 
 bool NFBLiquidGlassEnabled(void);
-// Unfolded/wide windows move the glass tab bar to a vertical rail on the right.
+// The glass tab bar becomes a vertical rail on the right, as in iPhone Duo apps:
+// everywhere except the unfolded screen held upright, which keeps X's bar.
 static const CGFloat NFBGlassTabRailInset = 80.0; // ponytail: guessed width, tune on device
+// Portrait windows narrower than this are the outer screen. ponytail: guessed
+// between a phone-width outer screen and the unfolded screen; tune on device.
+static const CGFloat NFBGlassTabRailCompactWidth = 560.0;
 BOOL NFBGlassTabRailActive(UIView* view);
 
 // Long press on the home navigation bar opens NeoFreeBird settings (Settings.x)
