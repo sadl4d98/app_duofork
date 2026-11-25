@@ -40,7 +40,19 @@
 - To inspect class names on device: turn on the `flex_twitter` setting (bundled FLEX), then search
   runtime classes or use the view selector on the tab bar.
 
+- Forwarding taps to X: X's handlers hit-test the bar, and hidden views can't be hit, so the
+  replaced bar is briefly shown (`BHTShowingForTap`) while a tap is delivered. Only single-tap
+  recognizers are used, since Home has others (one opened the account switcher). If X doesn't end up
+  on the tab, an alert lists how the tap went and the item's recognizers and actions.
+- While the native bar is vertical, X's floating compose button (`TFNFloatingActionButton`, one per
+  screen) is hidden and a tinted glass button above the bar taps the current one.
+- On iOS 27.1, content that reaches the side strip gets X's top-bar buttons moved into the strip, and
+  X's logo (a title view) disappears. Ending the content at the strip keeps the bar and logo normal.
+
 ## Split view decisions
+
+- Two columns split on the screen's centre line (the hinge), like Duo apps. The right column (and a
+  single column) ends where the side strip begins, so nothing sits under the status bar or tab bar.
 
 - Keep the split at two columns. A post opened from the right column pushes inside that column. The
   user found more columns disorienting.

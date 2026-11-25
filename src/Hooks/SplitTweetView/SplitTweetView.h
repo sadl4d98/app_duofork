@@ -1,7 +1,6 @@
 #import "../HookHelpers.h"
 
 static char BHTSplitTweetStateKey;
-static const CGFloat BHTSplitTweetPrimaryWidthFraction = 0.55;
 
 BOOL BHTSplitTweetViewEnabled(void);
 BHTSplitTweetState* BHTTweetState(id object);

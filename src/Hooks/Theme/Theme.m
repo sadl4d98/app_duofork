@@ -1046,44 +1046,92 @@ static BOOL BHTInvokeTapTargets(UITapGestureRecognizer* recognizer, CGPoint poin
     return invoked;
 }
 
-static BOOL BHTForwardTapToGlassTab(UIView* item, UIView* bar) {
-    CGPoint point = [item convertPoint:CGPointMake(CGRectGetMidX(item.bounds), CGRectGetMidY(item.bounds))
-                                toView:nil];
-    for (UIView* view = item; view; view = view.superview) {
-        if ([view isKindOfClass:UIControl.class]) {
-            UIControl* control = (UIControl*)view;
-            UIControlEvents events = control.allControlEvents;
-            for (NSNumber* event in @[@(UIControlEventPrimaryActionTriggered), @(UIControlEventTouchUpInside),
-                                      @(UIControlEventTouchDown)]) {
-                if (events & event.unsignedIntegerValue) {
-                    [control sendActionsForControlEvents:event.unsignedIntegerValue];
-                    return YES;
-                }
-            }
+// Set while a replaced (hidden) X view is shown for the length of one
+// forwarded tap: hidden views drop out of hit-testing, which X's handlers use.
+static BOOL BHTShowingForTap;
+
+static NSString* BHTControlTap(UIControl* control) {
+    UIControlEvents events = control.allControlEvents;
+    for (NSNumber* event in @[@(UIControlEventPrimaryActionTriggered), @(UIControlEventTouchUpInside),
+                              @(UIControlEventTouchDown)]) {
+        if (events & event.unsignedIntegerValue) {
+            [control sendActionsForControlEvents:event.unsignedIntegerValue];
+            return [NSString stringWithFormat:@"control %@", NSStringFromClass(control.class)];
         }
-        for (UIGestureRecognizer* recognizer in view.gestureRecognizers) {
-            if (recognizer.enabled && [recognizer isKindOfClass:UITapGestureRecognizer.class] &&
-                BHTInvokeTapTargets((UITapGestureRecognizer*)recognizer, point)) return YES;
-        }
-        if (view == bar) break;
     }
-    for (UIView* view = item; view && view != bar.superview; view = view.superview) {
-        if ([view accessibilityActivate]) return YES;
-    }
-    return NO;
+    return nil;
 }
 
-// ponytail: debug aid. If X's bar ever selects tabs some other way, this shows
-// what is there so forwarding can be fixed. Remove once forwarding is proven.
-static void BHTReportGlassTabForwardFailure(UIView* item, UIView* bar) {
+static UIControl* BHTFirstControl(UIView* view) {
+    if ([view isKindOfClass:UIControl.class] && ((UIControl*)view).allControlEvents) return (UIControl*)view;
+    for (UIView* subview in view.subviews) {
+        UIControl* control = BHTFirstControl(subview);
+        if (control) return control;
+    }
+    return nil;
+}
+
+static BOOL BHTIsSingleTap(UIGestureRecognizer* recognizer) {
+    if (!recognizer.enabled || ![recognizer isKindOfClass:UITapGestureRecognizer.class]) return NO;
+    UITapGestureRecognizer* tap = (UITapGestureRecognizer*)recognizer;
+    return tap.numberOfTapsRequired == 1 && tap.numberOfTouchesRequired == 1;
+}
+
+// Taps `target` the way a finger would reach it, stopping at `boundary`.
+// Returns how it was delivered, or nil if nothing took it.
+static NSString* BHTForwardTap(UIView* target, UIView* boundary) {
+    BOOL hidden = boundary.hidden;
+    BHTShowingForTap = YES;
+    boundary.hidden = NO;
+    NSString* how = nil;
+    CGPoint point = [target convertPoint:CGPointMake(CGRectGetMidX(target.bounds), CGRectGetMidY(target.bounds))
+                                  toView:nil];
+    UIControl* inside = BHTFirstControl(target);
+    if (inside) how = BHTControlTap(inside);
+    for (UIView* view = target; !how && view; view = view.superview) {
+        if ([view isKindOfClass:UIControl.class]) how = BHTControlTap((UIControl*)view);
+        for (UIGestureRecognizer* recognizer in view.gestureRecognizers) {
+            if (how || !BHTIsSingleTap(recognizer)) continue;
+            if (BHTInvokeTapTargets((UITapGestureRecognizer*)recognizer, point)) {
+                how = [NSString stringWithFormat:@"tap on %@", NSStringFromClass(view.class)];
+            }
+        }
+        if (view == boundary) break;
+    }
+    for (UIView* view = target; !how && view && view != boundary.superview; view = view.superview) {
+        if ([view accessibilityActivate]) how = [NSString stringWithFormat:@"accessibility %@", NSStringFromClass(view.class)];
+    }
+    boundary.hidden = hidden;
+    BHTShowingForTap = NO;
+    return how;
+}
+
+// ponytail: debug aid. Shows how a tab tap was delivered and what X's tab
+// item looks like, so forwarding can be fixed. Remove once forwarding is proven.
+static void BHTReportGlassTabForwardFailure(UIView* item, UIView* bar, NSString* how) {
     static BOOL reported;
     if (reported) return;
     reported = YES;
-    NSMutableString* info = [NSMutableString new];
+    NSMutableString* info = [NSMutableString stringWithFormat:@"Delivered: %@\n", how ?: @"nothing took it"];
+    Ivar targetsField = class_getInstanceVariable(UIGestureRecognizer.class, "_targets");
     for (UIView* view = item; view; view = view.superview) {
-        [info appendFormat:@"%@", NSStringFromClass(view.class)];
+        [info appendFormat:@"%@%@", NSStringFromClass(view.class), view.isAccessibilityElement ? @" (ax)" : @""];
+        if ([view isKindOfClass:UIControl.class]) {
+            [info appendFormat:@" events=%lu", (unsigned long)((UIControl*)view).allControlEvents];
+        }
         for (UIGestureRecognizer* recognizer in view.gestureRecognizers) {
-            [info appendFormat:@" [%@]", NSStringFromClass(recognizer.class)];
+            [info appendFormat:@" [%@", NSStringFromClass(recognizer.class)];
+            if ([recognizer isKindOfClass:UITapGestureRecognizer.class]) {
+                [info appendFormat:@" taps=%lu", (unsigned long)((UITapGestureRecognizer*)recognizer).numberOfTapsRequired];
+            }
+            NSArray* targets = targetsField ? object_getIvar(recognizer, targetsField) : nil;
+            for (id entry in [targets isKindOfClass:NSArray.class] ? targets : @[]) {
+                Ivar actionField = class_getInstanceVariable(object_getClass(entry), "_action");
+                if (!actionField) continue;
+                SEL action = *(SEL*)((uint8_t*)(__bridge void*)entry + ivar_getOffset(actionField));
+                [info appendFormat:@" %@", action ? NSStringFromSelector(action) : @"?"];
+            }
+            [info appendString:@"]"];
         }
         [info appendString:@"\n"];
         if (view == bar) break;
@@ -1091,7 +1139,7 @@ static void BHTReportGlassTabForwardFailure(UIView* item, UIView* bar) {
     UIViewController* top = bar.window.rootViewController;
     while (top.presentedViewController)
         top = top.presentedViewController;
-    UIAlertController* alert = [UIAlertController alertControllerWithTitle:@"Tab rail couldn't switch tabs"
+    UIAlertController* alert = [UIAlertController alertControllerWithTitle:@"Tab bar couldn't switch tabs"
                                                                    message:info
                                                             preferredStyle:UIAlertControllerStyleAlert];
     [alert addAction:[UIAlertAction actionWithTitle:@"Copy"
@@ -1101,6 +1149,25 @@ static void BHTReportGlassTabForwardFailure(UIView* item, UIView* bar) {
                                             }]];
     [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleCancel handler:nil]];
     [top presentViewController:alert animated:YES completion:nil];
+}
+
+// Forwards a tab tap, then reports if X didn't end up on that tab.
+static void BHTSelectGlassTab(UIView* bar, NSArray<UIView*>* items, NSUInteger index) {
+    if (index >= items.count || !bar) return;
+    UIView* item = items[index];
+    NSString* how = BHTForwardTap(item, bar);
+    if (!how) {
+        BHTReportGlassTabForwardFailure(item, bar, nil);
+        return;
+    }
+    __weak UIView* weakBar = bar;
+    __weak UIView* weakItem = item;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.6 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        UIView* strongBar = weakBar;
+        if (strongBar && BHTGlassTabSelectedIndex(strongBar) != (NSInteger)index) {
+            BHTReportGlassTabForwardFailure(weakItem, strongBar, how);
+        }
+    });
 }
 
 static UIImage* BHTGlassTabItemImage(UIView* item) {
@@ -1234,8 +1301,7 @@ static const CGFloat BHTGlassTabRailPadding = 8.0;
 - (void)didTapButton:(UIButton*)button {
     UIView* bar = self.bar;
     if (button.tag >= (NSInteger)self.items.count || !bar) return;
-    UIView* item = self.items[button.tag];
-    if (!BHTForwardTapToGlassTab(item, bar)) BHTReportGlassTabForwardFailure(item, bar);
+    BHTSelectGlassTab(bar, self.items, button.tag);
     // Selection updates once X has handled the tap.
     __weak BHTGlassTabRail* weakSelf = self;
     for (NSNumber* delay in @[@0.05, @0.4]) {
@@ -1275,7 +1341,85 @@ static const CGFloat BHTGlassTabRailPadding = 8.0;
 @property (nonatomic, strong) UITabBarController* controller;
 @property (nonatomic, strong) BHTPassthroughView* container;
 @property (nonatomic, copy) NSArray<UIView*>* items;
+@property (nonatomic, strong) UIVisualEffectView* compose;
+@property (nonatomic, strong) UIButton* composeButton;
+// The system put the bar in the vertical side strip (where compose sits on top).
+@property (nonatomic) BOOL railLayout;
+- (void)layoutCompose;
 @end
+
+static __weak BHTNativeTabHost* BHTActiveNativeHost;
+
+// MARK: Compose button
+
+// X's floating "+" (one per screen that has one) moves onto the rail as a glass
+// button while the native bar is vertical. Tapping it taps X's own button.
+
+static char BHTFloatingRequestedHiddenKey;
+static char BHTFloatingOrderKey;
+
+static NSHashTable<UIView*>* BHTFloatingButtons(void) {
+    static NSHashTable<UIView*>* buttons;
+    if (!buttons) buttons = [NSHashTable weakObjectsHashTable];
+    return buttons;
+}
+
+static BOOL BHTFloatingButtonReplaced(UIView* button) {
+    return BHTActiveNativeHost.railLayout && button.window;
+}
+
+BOOL BHTFloatingButtonHiddenRequest(UIView* button, BOOL hidden) {
+    if (BHTShowingForTap) return hidden;
+    objc_setAssociatedObject(button, &BHTFloatingRequestedHiddenKey, @(hidden), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    BHTNativeTabHost* host = BHTActiveNativeHost;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [host layoutCompose];
+    });
+    return hidden || BHTFloatingButtonReplaced(button);
+}
+
+static void BHTApplyFloatingButtonHidden(UIView* button) {
+    // Goes through the setHidden: hook, which adds the replacement on top.
+    button.hidden = [objc_getAssociatedObject(button, &BHTFloatingRequestedHiddenKey) boolValue];
+}
+
+void BHTFloatingButtonDidMoveToWindow(UIView* button) {
+    static NSUInteger order;
+    if (!button.window) return;
+    [BHTFloatingButtons() addObject:button];
+    objc_setAssociatedObject(button, &BHTFloatingOrderKey, @(++order), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    BHTApplyFloatingButtonHidden(button);
+}
+
+// The floating button of the screen on show: the newest one in this window that
+// X itself isn't hiding.
+static UIView* BHTCurrentFloatingButton(UIWindow* window) {
+    UIView* best = nil;
+    NSUInteger bestOrder = 0;
+    for (UIView* button in BHTFloatingButtons().allObjects) {
+        if (button.window != window || [objc_getAssociatedObject(button, &BHTFloatingRequestedHiddenKey) boolValue]) {
+            continue;
+        }
+        BOOL visible = YES;
+        for (UIView* view = button.superview; view && visible; view = view.superview)
+            visible = !view.hidden && view.alpha > 0.01;
+        NSUInteger order = [objc_getAssociatedObject(button, &BHTFloatingOrderKey) unsignedIntegerValue];
+        if (visible && order >= bestOrder) {
+            best = button;
+            bestOrder = order;
+        }
+    }
+    return best;
+}
+
+static UIImage* BHTFirstImage(UIView* view) {
+    if ([view isKindOfClass:UIImageView.class] && ((UIImageView*)view).image) return ((UIImageView*)view).image;
+    for (UIView* subview in view.subviews) {
+        UIImage* image = BHTFirstImage(subview);
+        if (image) return image;
+    }
+    return nil;
+}
 
 @implementation BHTNativeTabHost
 
@@ -1288,7 +1432,64 @@ static const CGFloat BHTGlassTabRailPadding = 8.0;
     _container = [BHTPassthroughView new];
     _container.controller = _controller;
     _container.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+
+    Class glassClass = NSClassFromString(@"UIGlassEffect");
+    UIVisualEffect* effect =
+        [glassClass respondsToSelector:@selector(effectWithStyle:)]
+            ? ((UIVisualEffect * (*)(id, SEL, NSInteger)) objc_msgSend)(glassClass, @selector(effectWithStyle:), 0)
+            : [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemChromeMaterial];
+    // iOS 26 glass API, absent from the SDK this builds against.
+    if ([effect respondsToSelector:@selector(setTintColor:)]) {
+        ((void (*)(id, SEL, id))objc_msgSend)(effect, @selector(setTintColor:),
+                                              CurrentAccentColor() ?: UIColor.systemBlueColor);
+    }
+    SEL interactive = NSSelectorFromString(@"setInteractive:");
+    if ([effect respondsToSelector:interactive]) ((void (*)(id, SEL, BOOL))objc_msgSend)(effect, interactive, YES);
+    _compose = [[UIVisualEffectView alloc] initWithEffect:effect];
+    _compose.clipsToBounds = YES;
+    _compose.hidden = YES;
+    _composeButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    _composeButton.tintColor = UIColor.whiteColor;
+    _composeButton.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    [_composeButton addTarget:self action:@selector(didTapCompose) forControlEvents:UIControlEventTouchUpInside];
+    [_compose.contentView addSubview:_composeButton];
     return self;
+}
+
+- (void)didTapCompose {
+    UIView* button = BHTCurrentFloatingButton(self.bar.window);
+    if (button) BHTForwardTap(button, button);
+}
+
+// Puts the compose button on top of the vertical bar, mirroring X's current
+// floating button (its icon, and whether the screen has one at all).
+- (void)layoutCompose {
+    UITabBar* tabBar = self.controller.tabBar;
+    UIView* container = self.container;
+    CGRect bar = tabBar.window ? [container convertRect:tabBar.bounds fromView:tabBar] : CGRectZero;
+    BOOL rail = !tabBar.hidden && CGRectGetHeight(bar) > CGRectGetWidth(bar);
+    if (rail != self.railLayout) {
+        self.railLayout = rail;
+        for (UIView* button in BHTFloatingButtons().allObjects)
+            BHTApplyFloatingButtonHidden(button);
+    }
+    UIView* floating = rail ? BHTCurrentFloatingButton(self.bar.window) : nil;
+    self.compose.hidden = !floating;
+    if (!floating) return;
+    if (self.compose.superview != container) [container addSubview:self.compose];
+    UIImage* image = BHTFirstImage(floating) ?: [UIImage systemImageNamed:@"plus"];
+    if ([self.composeButton imageForState:UIControlStateNormal] != image) {
+        [self.composeButton setImage:[image imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate]
+                            forState:UIControlStateNormal];
+    }
+    self.composeButton.accessibilityLabel = floating.accessibilityLabel;
+    CGFloat size = MIN(CGRectGetWidth(bar), 56.0);
+    CGRect frame = CGRectMake(CGRectGetMidX(bar) - size / 2.0, CGRectGetMinY(bar) - 12.0 - size, size, size);
+    if (!CGRectEqualToRect(self.compose.frame, frame)) {
+        self.compose.frame = frame;
+        self.compose.layer.cornerRadius = size / 2.0;
+        self.composeButton.frame = self.compose.contentView.bounds;
+    }
 }
 
 // The top of the view controller chain that shows X's bar (the root, or
@@ -1319,9 +1520,14 @@ static UIViewController* BHTTopControllerForView(UIView* view) {
         [controller didMoveToParentViewController:parent];
     }
     if (parent.view.subviews.lastObject != self.container) [parent.view bringSubviewToFront:self.container];
+    BHTActiveNativeHost = self;
 }
 
 - (void)detach {
+    if (BHTActiveNativeHost == self) BHTActiveNativeHost = nil;
+    self.railLayout = NO;
+    for (UIView* button in BHTFloatingButtons().allObjects)
+        BHTApplyFloatingButtonHidden(button);
     UITabBarController* controller = self.controller;
     if (!controller.parentViewController) return;
     [controller willMoveToParentViewController:nil];
@@ -1355,16 +1561,17 @@ static UIViewController* BHTTopControllerForView(UIView* view) {
     if (selected >= 0 && selected < (NSInteger)items.count && controller.selectedIndex != (NSUInteger)selected) {
         controller.selectedIndex = selected;
     }
+    __weak BHTNativeTabHost* weakSelf = self;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [weakSelf layoutCompose];
+    });
 }
 
 - (BOOL)tabBarController:(UITabBarController*)controller shouldSelectViewController:(UIViewController*)page {
     NSUInteger index = [controller.viewControllers indexOfObjectIdenticalTo:page];
     UIView* bar = self.bar;
     if (index == NSNotFound || index >= self.items.count || !bar) return NO;
-    if (!BHTForwardTapToGlassTab(self.items[index], bar)) {
-        BHTReportGlassTabForwardFailure(self.items[index], bar);
-        return NO;
-    }
+    BHTSelectGlassTab(bar, self.items, index);
     __weak BHTNativeTabHost* weakSelf = self;
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.4 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         [weakSelf reload];
@@ -1388,6 +1595,7 @@ BOOL BHTGlassTabIsRail(UIView* bar) {
 static BOOL BHTHidingGlassTabBar;
 
 BOOL BHTGlassTabHiddenRequest(UIView* bar, BOOL hidden) {
+    if (BHTShowingForTap) return hidden;
     if (!BHTHidingGlassTabBar) {
         objc_setAssociatedObject(bar, &BHTGlassTabRequestedHiddenKey, @(hidden), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         BHTGlassTabRail* rail = objc_getAssociatedObject(bar, &BHTGlassTabRailKey);

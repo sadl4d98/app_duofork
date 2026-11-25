@@ -59,7 +59,7 @@
 @property (nonatomic, strong) UIViewPropertyAnimator* columnAnimator;
 - (instancetype)initWithContent:(UIViewController*)content detail:(UINavigationController*)detail;
 - (BOOL)hasRoomForDetail;
-- (CGFloat)columnsWidthForWidth:(CGFloat)width;
+- (CGFloat)columnsEndForWidth:(CGFloat)width leftWidth:(CGFloat*)leftWidth;
 - (void)finishColumnAnimation;
 - (void)setDetailVisible:(BOOL)visible animated:(BOOL)animated completion:(void (^)(void))completion;
 @end

@@ -28,9 +28,24 @@
     return self.isViewLoaded && self.view.window && CGRectGetWidth(self.view.bounds) >= 800.0;
 }
 
-// Width the columns may use; the vertical glass tab rail owns the rest.
-- (CGFloat)columnsWidthForWidth:(CGFloat)width {
-    return MAX(0.0, width - (NFBGlassTabRailNeedsInset(self.viewIfLoaded) ? NFBGlassTabRailInset : 0.0));
+// For a host `width` wide: where the columns end, and the left column's width.
+// Like iPhone Duo apps, the split sits on the screen's centre line (the hinge)
+// and the right column stops where the side strip by the status bar begins.
+- (CGFloat)columnsEndForWidth:(CGFloat)width leftWidth:(CGFloat*)leftWidth {
+    UIView* view = self.viewIfLoaded;
+    UIWindow* window = view.window;
+    CGFloat divider = 1.0 / MAX(window.screen.scale, 1.0);
+    CGFloat end = width - (NFBGlassTabRailNeedsInset(view) ? NFBGlassTabRailInset : 0.0);
+    CGFloat hinge = floor(width / 2.0);
+    // Only the current size maps onto the window; mid-rotation, assume the host fills it.
+    if (window && fabs(width - CGRectGetWidth(view.bounds)) < 1.0) {
+        CGFloat origin = [view convertPoint:CGPointZero toView:nil].x;
+        hinge = floor(CGRectGetMidX(window.bounds) - origin);
+        end = MIN(end, CGRectGetMaxX(window.bounds) - window.safeAreaInsets.right - origin);
+    }
+    end = MAX(0.0, end);
+    if (leftWidth) *leftWidth = MAX(0.0, MIN(hinge, end - divider));
+    return end;
 }
 
 - (void)viewDidLoad {
@@ -75,9 +90,10 @@
             [self.detail beginAppearanceTransition:YES animated:animate];
         }
         CGFloat width = CGRectGetWidth(self.view.bounds);
-        CGFloat columns = [self columnsWidthForWidth:width];
+        CGFloat left = 0.0;
+        CGFloat end = [self columnsEndForWidth:width leftWidth:&left];
         CGFloat divider = 1.0 / MAX(self.view.window.screen.scale, 1.0);
-        CGFloat detailWidth = columns - divider - floor((columns - divider) * BHTSplitTweetPrimaryWidthFraction);
+        CGFloat detailWidth = MAX(0.0, end - left - divider);
         self.detail.view.frame = CGRectMake(width, 0, detailWidth, CGRectGetHeight(self.view.bounds));
         self.divider.frame = CGRectMake(width, 0, divider, CGRectGetHeight(self.view.bounds));
         [self.view addSubview:self.detail.view];
@@ -129,15 +145,16 @@
 
 - (CGSize)sizeForChildContentContainer:(id<UIContentContainer>)container
                withParentContainerSize:(CGSize)parentSize {
-    CGFloat columns = [self columnsWidthForWidth:parentSize.width];
+    CGFloat leftWidth = 0.0;
+    CGFloat end = [self columnsEndForWidth:parentSize.width leftWidth:&leftWidth];
     if (self.detailVisible && (container == self.content || container == self.detail)) {
         CGFloat dividerWidth = 1.0 / MAX(self.view.window.screen.scale, 1.0);
-        CGFloat availableWidth = MAX(0.0, columns - dividerWidth);
-        CGFloat leftWidth = floor(availableWidth * BHTSplitTweetPrimaryWidthFraction);
-        CGFloat width = container == self.content ? leftWidth : availableWidth - leftWidth;
+        CGFloat width = container == self.content ? leftWidth : MAX(0.0, end - leftWidth - dividerWidth);
         return CGSizeMake(width, parentSize.height);
     }
-    return container == self.content ? CGSizeMake(columns, parentSize.height) : parentSize;
+    // A single column also stops at the side strip, which keeps the strip clear and
+    // X's top bar (with its logo) in place instead of moving into the strip.
+    return container == self.content ? CGSizeMake(end, parentSize.height) : parentSize;
 }
 
 - (void)viewDidLayoutSubviews {
@@ -155,8 +172,8 @@
     }
     if (self.detailVisible) {
         self.divider.frame = CGRectMake(leftWidth, 0, dividerWidth, bounds.size.height);
-        self.detail.view.frame = CGRectMake(leftWidth + dividerWidth, 0,
-                                            [self columnsWidthForWidth:bounds.size.width] - leftWidth - dividerWidth,
+        CGFloat end = [self columnsEndForWidth:bounds.size.width leftWidth:NULL];
+        self.detail.view.frame = CGRectMake(leftWidth + dividerWidth, 0, MAX(0.0, end - leftWidth - dividerWidth),
                                             bounds.size.height);
     } else if (self.detail.parentViewController == self) {
         // Closing: slide the attached pane past the trailing edge.
@@ -508,10 +525,10 @@
         self.detail.viewIfLoaded.window != host.view.window) return NO;
     CGRect left = host.content.view.frame;
     CGRect right = self.detail.view.frame;
-    CGFloat width = [host columnsWidthForWidth:CGRectGetWidth(host.view.bounds)];
+    CGFloat expectedLeft = 0.0;
+    CGFloat width = [host columnsEndForWidth:CGRectGetWidth(host.view.bounds) leftWidth:&expectedLeft];
     CGFloat height = CGRectGetHeight(host.view.bounds);
     CGFloat divider = 1.0 / MAX(host.view.window.screen.scale, 1.0);
-    CGFloat expectedLeft = floor(MAX(0.0, width - divider) * BHTSplitTweetPrimaryWidthFraction);
     // Comparisons also reject NaN/infinite geometry. Check only after animation
     // and tab transitions settle, when frames represent the final layout.
     return width > 0 && height > 0 &&

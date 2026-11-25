@@ -40,6 +40,9 @@ BOOL BHTGlassTabIsRail(UIView* bar);
 // Records X's own hidden request and returns what the bar should really be.
 BOOL BHTGlassTabHiddenRequest(UIView* bar, BOOL hidden);
 void BHTScheduleGlassTabRailUpdate(UIView* view);
+// X's floating compose button, replaced by a glass button on the native rail.
+BOOL BHTFloatingButtonHiddenRequest(UIView* button, BOOL hidden);
+void BHTFloatingButtonDidMoveToWindow(UIView* button);
 UIView* BHTPrepareLegacyTabLayout(T1TabView* tabView);
 void BHTFinishLegacyTabLayout(T1TabView* tabView, UIView* glyph);
 void BHTUpdateLegacyTabLabelColor(T1TabView* tabView, BOOL selected);

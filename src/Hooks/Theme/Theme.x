@@ -405,6 +405,19 @@ static BOOL updatingTabIconColor = NO;
 
 %end
 
+%hook TFNFloatingActionButton
+
+- (void)didMoveToWindow {
+    %orig;
+    BHTFloatingButtonDidMoveToWindow((UIView*)self);
+}
+
+- (void)setHidden:(BOOL)hidden {
+    %orig(BHTFloatingButtonHiddenRequest((UIView*)self, hidden));
+}
+
+%end
+
 %hook _TtC11XNavigation14TabBarItemView
 
 - (void)layoutSubviews {
