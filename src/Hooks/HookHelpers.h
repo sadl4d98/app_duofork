@@ -54,6 +54,9 @@ void applySquareAvatarsSetting(void);
 NSString* formatNumberWithSuffix(long long number);
 
 bool NFBLiquidGlassEnabled(void);
+// Unfolded/wide windows move the glass tab bar to a vertical rail on the right.
+static const CGFloat NFBGlassTabRailInset = 80.0; // ponytail: guessed width, tune on device
+BOOL NFBGlassTabRailActive(UIView* view);
 
 // Long press on the home navigation bar opens NeoFreeBird settings (Settings.x)
 void attachNeoFreeBirdSettingsGesture(UIViewController* home);

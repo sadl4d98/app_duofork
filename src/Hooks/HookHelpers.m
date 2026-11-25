@@ -161,6 +161,11 @@ bool NFBLiquidGlassEnabled(void) {
     return [BHTSettings boolForKey:@"liquid_glass"];
 }
 
+BOOL NFBGlassTabRailActive(UIView* view) {
+    // Same 800pt threshold the split tweet column uses for "has room".
+    return NFBLiquidGlassEnabled() && view.window && CGRectGetWidth(view.window.bounds) >= 800.0;
+}
+
 BOOL boolIvar(id object, const char* name, BOOL fallback) {
     Ivar ivar = class_getInstanceVariable(object_getClass(object), name);
     if (!ivar) {
