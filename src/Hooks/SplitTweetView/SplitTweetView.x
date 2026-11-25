@@ -44,7 +44,6 @@
     self.divider.hidden = YES;
     [self.view addSubview:self.divider];
     self.view.clipsToBounds = YES;
-    self.view.backgroundColor = UIColor.systemBackgroundColor;
 }
 
 - (void)setDetailVisible:(BOOL)visible {
