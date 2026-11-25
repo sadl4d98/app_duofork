@@ -32,8 +32,11 @@ BOOL BHTRouteTweetToDetail(UINavigationController* primary, UIViewController* co
         return NO;
     }
     BHTSplitTweetState* state = BHTTweetStateForController(primary);
-    if (!state || primary == state.detail) {
+    if (!state) {
         return NO;
+    }
+    if (primary == state.detail) {
+        return [state advanceToConversation:controller];
     }
     return [state showConversation:controller fromPrimary:primary];
 }
@@ -71,6 +74,7 @@ BHTSplitTweetHostController* BHTMakeTweetColumnHost(UIViewController* content) {
     state.emptyController = empty;
     objc_setAssociatedObject(host, &BHTSplitTweetStateKey, state, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     objc_setAssociatedObject(detail, &BHTSplitTweetStateKey, state, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    [state setUpDetailColumn];
     return host;
 }
 
@@ -98,4 +102,51 @@ void BHTLayoutTweetColumnChrome(BHTSplitTweetHostController* host) {
     [appView setNeedsLayout];
     [appView layoutIfNeeded];
     [host.content.viewIfLoaded layoutIfNeeded];
+}
+
+BOOL BHTSplitColumnBarHidden(UINavigationController* navigation, BOOL hidden) {
+    BHTSplitTweetState* state = BHTTweetStateForController(navigation);
+    if (hidden || !state || !BHTSplitTweetViewEnabled()) return hidden;
+    return navigation == state.detail || (state.primaryBarHidden && navigation == state.primary);
+}
+
+// MARK: - Open the right column at the first reply
+
+static char BHTScrollToRepliesKey;
+
+void BHTMarkScrollToReplies(UIViewController* conversation) {
+    objc_setAssociatedObject(conversation, &BHTScrollToRepliesKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
+
+// Replies load after the focal post, and X re-anchors the post while they do,
+// so keep the post scrolled just out of view for a moment unless the user scrolls.
+static void BHTKeepScrolledPastFocal(UIView* focal, UIScrollView* scroll, NSInteger attempts) {
+    if (attempts <= 0 || !focal.window || !scroll.window || scroll.isTracking || scroll.isDragging ||
+        scroll.isDecelerating) return;
+    UIEdgeInsets inset = scroll.adjustedContentInset;
+    CGFloat target = CGRectGetMaxY([focal convertRect:focal.bounds toView:scroll]) - inset.top;
+    CGFloat limit = scroll.contentSize.height + inset.bottom - CGRectGetHeight(scroll.bounds);
+    // ponytail: with too few replies to fill the column, the post stays where X put it.
+    if (target <= limit && fabs(scroll.contentOffset.y - target) > 1.0) {
+        scroll.contentOffset = CGPointMake(scroll.contentOffset.x, target);
+    }
+    __weak UIView* weakFocal = focal;
+    __weak UIScrollView* weakScroll = scroll;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        BHTKeepScrolledPastFocal(weakFocal, weakScroll, attempts - 1);
+    });
+}
+
+void BHTScrollPastFocalIfNeeded(UIView* focal) {
+    if (!focal.window || !BHTSplitTweetViewEnabled()) return;
+    for (UIResponder* responder = focal.nextResponder; responder; responder = responder.nextResponder) {
+        if (![responder isKindOfClass:UIViewController.class] ||
+            !objc_getAssociatedObject(responder, &BHTScrollToRepliesKey)) continue;
+        objc_setAssociatedObject(responder, &BHTScrollToRepliesKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        UIView* scroll = focal.superview;
+        while (scroll && ![scroll isKindOfClass:UIScrollView.class])
+            scroll = scroll.superview;
+        if (scroll) BHTKeepScrolledPastFocal(focal, (UIScrollView*)scroll, 25);
+        return;
+    }
 }

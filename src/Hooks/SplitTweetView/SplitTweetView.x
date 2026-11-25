@@ -9,6 +9,9 @@
 @property (nonatomic, readonly) UINavigationController* currentTabNavigationController;
 @end
 
+@interface BHTSplitTweetState () <UIGestureRecognizerDelegate>
+@end
+
 @implementation BHTSplitTweetHostController
 
 - (instancetype)initWithContent:(UIViewController*)content detail:(UINavigationController*)detail {
@@ -25,6 +28,11 @@
     return self.isViewLoaded && self.view.window && CGRectGetWidth(self.view.bounds) >= 800.0;
 }
 
+// Width the columns may use; the vertical glass tab rail owns the rest.
+- (CGFloat)columnsWidthForWidth:(CGFloat)width {
+    return MAX(0.0, width - (NFBGlassTabRailActive(self.viewIfLoaded) ? NFBGlassTabRailInset : 0.0));
+}
+
 - (void)viewDidLoad {
     [super viewDidLoad];
     [self addChildViewController:self.content];
@@ -36,6 +44,7 @@
     self.divider.hidden = YES;
     [self.view addSubview:self.divider];
     self.view.clipsToBounds = YES;
+    self.view.backgroundColor = UIColor.systemBackgroundColor;
 }
 
 - (void)setDetailVisible:(BOOL)visible {
@@ -67,8 +76,9 @@
             [self.detail beginAppearanceTransition:YES animated:animate];
         }
         CGFloat width = CGRectGetWidth(self.view.bounds);
+        CGFloat columns = [self columnsWidthForWidth:width];
         CGFloat divider = 1.0 / MAX(self.view.window.screen.scale, 1.0);
-        CGFloat detailWidth = width - divider - floor((width - divider) * BHTSplitTweetPrimaryWidthFraction);
+        CGFloat detailWidth = columns - divider - floor((columns - divider) * BHTSplitTweetPrimaryWidthFraction);
         self.detail.view.frame = CGRectMake(width, 0, detailWidth, CGRectGetHeight(self.view.bounds));
         self.divider.frame = CGRectMake(width, 0, divider, CGRectGetHeight(self.view.bounds));
         [self.view addSubview:self.detail.view];
@@ -120,14 +130,15 @@
 
 - (CGSize)sizeForChildContentContainer:(id<UIContentContainer>)container
                withParentContainerSize:(CGSize)parentSize {
+    CGFloat columns = [self columnsWidthForWidth:parentSize.width];
     if (self.detailVisible && (container == self.content || container == self.detail)) {
         CGFloat dividerWidth = 1.0 / MAX(self.view.window.screen.scale, 1.0);
-        CGFloat availableWidth = MAX(0.0, parentSize.width - dividerWidth);
+        CGFloat availableWidth = MAX(0.0, columns - dividerWidth);
         CGFloat leftWidth = floor(availableWidth * BHTSplitTweetPrimaryWidthFraction);
         CGFloat width = container == self.content ? leftWidth : availableWidth - leftWidth;
         return CGSizeMake(width, parentSize.height);
     }
-    return parentSize;
+    return container == self.content ? CGSizeMake(columns, parentSize.height) : parentSize;
 }
 
 - (void)viewDidLayoutSubviews {
@@ -146,7 +157,8 @@
     if (self.detailVisible) {
         self.divider.frame = CGRectMake(leftWidth, 0, dividerWidth, bounds.size.height);
         self.detail.view.frame = CGRectMake(leftWidth + dividerWidth, 0,
-                                            bounds.size.width - leftWidth - dividerWidth, bounds.size.height);
+                                            [self columnsWidthForWidth:bounds.size.width] - leftWidth - dividerWidth,
+                                            bounds.size.height);
     } else if (self.detail.parentViewController == self) {
         // Closing: slide the attached pane past the trailing edge.
         CGRect frame = self.detail.view.frame;
@@ -234,25 +246,173 @@
     }
 }
 
-- (void)restoreCloseItem {
-    if (self.closeItem &&
-        [self.conversation.navigationItem.leftBarButtonItems containsObject:self.closeItem]) {
-        self.conversation.navigationItem.leftBarButtonItems = self.originalLeftItems;
-    }
-    self.originalLeftItems = nil;
-    self.closeItem = nil;
+// The left column hides its bar only while it shows controllers shifted out
+// of the right column, and restores whatever X had before.
+- (void)updatePrimaryBar {
+    UINavigationController* primary = self.primary;
+    BOOL hide = primary && self.active && !self.collapsed && self.shiftCounts.count > 0;
+    if (hide == self.primaryBarHidden) return;
+    if (hide) self.primaryBarWasHidden = primary.navigationBarHidden;
+    self.primaryBarHidden = hide;
+    [primary setNavigationBarHidden:hide || self.primaryBarWasHidden animated:NO];
 }
 
-- (void)installCloseItem {
-    // Do this after installing the stack, so the conversation's viewDidLoad
-    // can finish setting up its own navigation item first.
-    self.originalLeftItems = self.conversation.navigationItem.leftBarButtonItems;
-    self.closeItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemClose
-                                                                   target:self
-                                                                   action:@selector(closeDetail:)];
-    NSMutableArray* items = [NSMutableArray arrayWithObject:self.closeItem];
-    [items addObjectsFromArray:self.originalLeftItems ?: @[]];
-    self.conversation.navigationItem.leftBarButtonItems = items;
+- (void)setUpDetailColumn {
+    UINavigationController* detail = self.detail;
+    // The "Post" title is all that lives in the column's bar; back is a swipe.
+    [detail setNavigationBarHidden:YES animated:NO];
+    UIPanGestureRecognizer* pan = [[UIPanGestureRecognizer alloc] initWithTarget:self
+                                                                          action:@selector(handleBackPan:)];
+    pan.delegate = self;
+    [detail.view addGestureRecognizer:pan];
+}
+
+- (BOOL)gestureRecognizerShouldBegin:(UIGestureRecognizer*)gesture {
+    if (!self.active || self.collapsed || self.updating || self.swiping ||
+        self.detail.presentedViewController || self.detail.transitionCoordinator) return NO;
+    UIPanGestureRecognizer* pan = (UIPanGestureRecognizer*)gesture;
+    CGPoint velocity = [pan velocityInView:pan.view];
+    if (velocity.x <= fabs(velocity.y)) return NO;
+    // Leave horizontal scrollers (media carousels) alone while they can still scroll back.
+    UIView* hit = [pan.view hitTest:[pan locationInView:pan.view] withEvent:nil];
+    for (UIView* view = hit; view && view != pan.view; view = view.superview) {
+        if (![view isKindOfClass:UIScrollView.class]) continue;
+        UIScrollView* scroll = (UIScrollView*)view;
+        if (scroll.contentSize.width > CGRectGetWidth(scroll.bounds) &&
+            scroll.contentOffset.x > -scroll.adjustedContentInset.left + 1.0) return NO;
+    }
+    return YES;
+}
+
+- (BOOL)gestureRecognizer:(UIGestureRecognizer*)gesture
+    shouldBeRequiredToFailByGestureRecognizer:(UIGestureRecognizer*)other {
+    // Vertical scrolling in the column waits until this has ruled out a back swipe.
+    UIView* view = other.view;
+    return [other isKindOfClass:UIPanGestureRecognizer.class] && [view isKindOfClass:UIScrollView.class] &&
+           ((UIScrollView*)view).contentSize.width <= CGRectGetWidth(view.bounds) &&
+           [view isDescendantOfView:gesture.view];
+}
+
+- (void)handleBackPan:(UIPanGestureRecognizer*)pan {
+    UIView* column = self.detail.view;
+    CGFloat width = CGRectGetWidth(column.bounds);
+    CGFloat x = MAX(0.0, [pan translationInView:column.superview].x);
+    switch (pan.state) {
+        case UIGestureRecognizerStateBegan:
+            [self.glassHost finishColumnAnimation];
+            self.swiping = YES;
+            break;
+        case UIGestureRecognizerStateChanged:
+            column.transform = CGAffineTransformMakeTranslation(x, 0);
+            break;
+        case UIGestureRecognizerStateEnded:
+        case UIGestureRecognizerStateCancelled:
+        case UIGestureRecognizerStateFailed: {
+            BOOL back = pan.state == UIGestureRecognizerStateEnded &&
+                        (x > width * 0.3 || [pan velocityInView:column].x > 600.0);
+            __weak BHTSplitTweetState* weakSelf = self;
+            [UIView animateWithDuration:0.22
+                delay:0
+                options:UIViewAnimationOptionCurveEaseOut | UIViewAnimationOptionBeginFromCurrentState
+                animations:^{
+                    column.transform = back ? CGAffineTransformMakeTranslation(width, 0) : CGAffineTransformIdentity;
+                }
+                completion:^(BOOL finished) {
+                    BHTSplitTweetState* state = weakSelf;
+                    state.swiping = NO;
+                    if (back) {
+                        [state goBack];
+                    } else {
+                        column.transform = CGAffineTransformIdentity;
+                    }
+                    [state scheduleUpdate];
+                }];
+            break;
+        }
+        default:
+            break;
+    }
+}
+
+// Called once the right column has slid off screen.
+- (void)goBack {
+    UINavigationController* detail = self.detail;
+    UINavigationController* primary = self.primary;
+    UIView* column = detail.view;
+    NSArray<UIViewController*>* stack = primary.viewControllers;
+    NSUInteger count = self.shiftCounts.lastObject.unsignedIntegerValue;
+    if (detail.viewControllers.count > 1) {
+        // Something (a profile, media) was pushed inside the column: pop it.
+        [detail popViewControllerAnimated:NO];
+    } else if (count && count < stack.count && primary.topViewController == self.primaryScreen) {
+        // Return the left column's newest page to the right column.
+        self.updating = YES;
+        [self.shiftCounts removeLastObject];
+        NSArray<UIViewController*>* moving = [stack subarrayWithRange:NSMakeRange(stack.count - count, count)];
+        [primary setViewControllers:[stack subarrayWithRange:NSMakeRange(0, stack.count - count)] animated:NO];
+        [detail setViewControllers:moving animated:NO];
+        self.primaryScreen = primary.topViewController;
+        self.conversation = moving.firstObject;
+        [self updatePrimaryBar];
+        self.updating = NO;
+    } else {
+        // Nothing left to go back to: close the column from where it already is.
+        column.transform = CGAffineTransformIdentity;
+        if (self.glassHost) {
+            CGRect frame = column.frame;
+            frame.origin.x = CGRectGetWidth(self.glassHost.view.bounds);
+            column.frame = frame;
+        }
+        [self closeDetail:nil];
+        return;
+    }
+    column.transform = CGAffineTransformIdentity;
+    column.alpha = 0.0;
+    [UIView animateWithDuration:0.18
+                     animations:^{
+                         column.alpha = 1.0;
+                     }];
+}
+
+// A post opened from the right column: shift the right column's page into the
+// left column and open the new post on the right.
+- (BOOL)advanceToConversation:(UIViewController*)controller {
+    UINavigationController* primary = self.primary;
+    UINavigationController* detail = self.detail;
+    NSArray<UIViewController*>* moving = detail.viewControllers;
+    if (self.updating || self.swiping || !self.active || self.collapsed || !primary ||
+        ![self hasRoomForDetail] || primary != [self currentPrimary] ||
+        primary.presentedViewController || detail.presentedViewController ||
+        primary.transitionCoordinator || detail.transitionCoordinator ||
+        controller.parentViewController || primary.topViewController != self.primaryScreen ||
+        !moving.count || moving.firstObject != self.conversation) {
+        return NO;
+    }
+    [self.glassHost finishColumnAnimation];
+    self.updating = YES;
+    // A controller must leave one navigation stack before joining the other.
+    [detail setViewControllers:@[controller] animated:NO];
+    [primary setViewControllers:[primary.viewControllers arrayByAddingObjectsFromArray:moving] animated:NO];
+    if (!self.shiftCounts) self.shiftCounts = [NSMutableArray new];
+    [self.shiftCounts addObject:@(moving.count)];
+    self.primaryScreen = moving.lastObject;
+    self.conversation = controller;
+    BHTMarkScrollToReplies(controller);
+    [self updatePrimaryBar];
+    self.updating = NO;
+
+    UIView* column = detail.view;
+    column.transform = CGAffineTransformMakeTranslation(CGRectGetWidth(column.bounds), 0);
+    [UIView animateWithDuration:0.35
+                          delay:0
+         usingSpringWithDamping:0.9
+          initialSpringVelocity:0
+                        options:UIViewAnimationOptionAllowUserInteraction
+                     animations:^{
+                         column.transform = CGAffineTransformIdentity;
+                     }
+                     completion:nil];
+    return YES;
 }
 
 - (void)clearDetail {
@@ -267,9 +427,10 @@
 
 - (void)clearDetailAnimated:(BOOL)animated {
     [self.glassHost finishColumnAnimation];
-    [self restoreCloseItem];
     self.active = NO;
     self.collapsed = NO;
+    [self.shiftCounts removeAllObjects];
+    [self updatePrimaryBar];
     self.conversation = nil;
     self.primaryScreen = nil;
     self.primary = nil;
@@ -298,13 +459,16 @@
         primary != [self currentPrimary] || ![self hasRoomForDetail] ||
         primary.presentedViewController || self.detail.presentedViewController ||
         primary.transitionCoordinator || self.detail.transitionCoordinator ||
-        controller.parentViewController || !primary.topViewController ||
-        BHTIsConversationController(primary.topViewController)) {
+        controller.parentViewController || !primary.topViewController || self.swiping) {
         return NO;
     }
 
     self.updating = YES;
-    [self restoreCloseItem];
+    if (primary != self.primary || primary.topViewController != self.primaryScreen) {
+        // A new anchor: earlier column history no longer applies.
+        [self.shiftCounts removeAllObjects];
+        [self updatePrimaryBar];
+    }
     self.primary = primary;
     self.primaryScreen = primary.topViewController;
     self.conversation = controller;
@@ -312,8 +476,8 @@
     // X has already built this controller, including the account, tweet model,
     // reply sorting and navigation metadata. Only its destination changes.
     [self.detail setViewControllers:@[controller] animated:NO];
+    BHTMarkScrollToReplies(controller);
     [self setDetailVisible:YES animated:YES];
-    [self installCloseItem];
     self.updating = NO;
     return YES;
 }
@@ -325,7 +489,7 @@
         }
         return;
     }
-    if (self.updating || !self.active || !self.split.viewIfLoaded.window ||
+    if (self.updating || self.swiping || !self.active || !self.split.viewIfLoaded.window ||
         self.glassHost.columnAnimator || self.nativeColumnTransitioning) {
         return;
     }
@@ -366,7 +530,7 @@
 
     BOOL hasRoom = [self hasRoomForDetail];
     if (selected != primary) {
-        if (self.collapsed || !hasRoom || BHTTweetStateForController(selected) != self ||
+        if (self.collapsed || !hasRoom || self.shiftCounts.count || BHTTweetStateForController(selected) != self ||
             !selected.topViewController || BHTIsConversationController(selected.topViewController) ||
             selected.viewIfLoaded.window != self.split.viewIfLoaded.window ||
             primary.topViewController != self.primaryScreen ||
@@ -399,7 +563,7 @@
             [self.detail setViewControllers:detailStack animated:NO];
             self.collapsed = NO;
             [self setDetailVisible:YES];
-            [self installCloseItem];
+            [self updatePrimaryBar];
             self.updating = NO;
         }
     } else if (primary.topViewController != self.primaryScreen) {
@@ -408,9 +572,9 @@
     } else if (!hasRoom) {
         self.updating = YES;
         NSArray* detailStack = self.detail.viewControllers;
-        [self restoreCloseItem];
         [self.detail setViewControllers:@[self.emptyController] animated:NO];
         self.collapsed = YES;
+        [self updatePrimaryBar];
         [primary setViewControllers:[primaryStack arrayByAddingObjectsFromArray:detailStack] animated:NO];
         [self setDetailVisible:NO];
         self.updating = NO;
@@ -433,7 +597,7 @@
         self.detail.viewIfLoaded.window != host.view.window) return NO;
     CGRect left = host.content.view.frame;
     CGRect right = self.detail.view.frame;
-    CGFloat width = CGRectGetWidth(host.view.bounds);
+    CGFloat width = [host columnsWidthForWidth:CGRectGetWidth(host.view.bounds)];
     CGFloat height = CGRectGetHeight(host.view.bounds);
     CGFloat divider = 1.0 / MAX(host.view.window.screen.scale, 1.0);
     CGFloat expectedLeft = floor(MAX(0.0, width - divider) * BHTSplitTweetPrimaryWidthFraction);
@@ -536,6 +700,7 @@
     state.split = split;
     objc_setAssociatedObject(split, &BHTSplitTweetStateKey, state, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     [detail setViewControllers:@[state.emptyController] animated:NO];
+    [state setUpDetailColumn];
     [split setDisplayExtendedContent:NO animated:NO];
     return split;
 }
@@ -594,9 +759,43 @@
     [BHTTweetStateForController(self) scheduleUpdate];
 }
 
+- (void)setNavigationBarHidden:(BOOL)hidden animated:(BOOL)animated {
+    %orig(BHTSplitColumnBarHidden(self, hidden), animated);
+}
+
+%end
+
+// The right column comes from X's TFN fallback factory, which the hooks above
+// may not cover. Only the column itself carries state directly, so only it routes here.
+%hook TFNNavigationController
+
+- (void)pushViewController:(UIViewController*)controller animated:(BOOL)animated {
+    if (BHTTweetState(self) && BHTRouteTweetToDetail(self, controller)) {
+        return;
+    }
+    %orig;
+}
+
+- (void)setNavigationBarHidden:(BOOL)hidden animated:(BOOL)animated {
+    %orig(BHTSplitColumnBarHidden(self, hidden), animated);
+}
+
+%end
+
+%hook T1ConversationFocalStatusView
+
+- (void)didMoveToWindow {
+    %orig;
+    BHTScrollPastFocalIfNeeded((UIView*)self);
+}
+
 %end
 
 %hook XNAVNavigationController
+
+- (void)setNavigationBarHidden:(BOOL)hidden animated:(BOOL)animated {
+    %orig(BHTSplitColumnBarHidden(self, hidden), animated);
+}
 
 - (void)pushViewController:(UIViewController*)controller animated:(BOOL)animated {
     if (BHTRouteTweetToDetail(self, controller)) {
@@ -642,6 +841,10 @@
 
 - (BOOL)tfn_isResponderChainVetoed {
     return BHTTweetState(self) ? NO : %orig;
+}
+
+- (void)setNavigationBarHidden:(BOOL)hidden animated:(BOOL)animated {
+    %orig(BHTSplitColumnBarHidden(self, hidden), animated);
 }
 
 - (void)viewDidAppear:(BOOL)animated {

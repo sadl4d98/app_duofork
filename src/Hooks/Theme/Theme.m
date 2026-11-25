@@ -895,11 +895,21 @@ static NSString* BHTGlassTabItemTitle(UIView* item, UIView* bar) {
     return nil;
 }
 
+static UIView* BHTGlassTabGlyph(UIView* item) {
+    Ivar imageField = class_getInstanceVariable(object_getClass(item), "imageView");
+    UIImageView* imageView = imageField ? object_getIvar(item, imageField) : nil;
+    if (![imageView isKindOfClass:UIImageView.class]) return nil;
+    UIView* glyph = imageView.superview == item ? imageView : imageView.superview;
+    return glyph.superview == item ? glyph : nil;
+}
+
 void BHTLayoutGlassTabItem(UIView* item) {
     UILabel* label = objc_getAssociatedObject(item, &BHTGlassTabLabelKey);
     if (!label) return;
 
-    BOOL showLabel = [BHTSettings boolForKey:@"restore_tab_labels"] && label.text.length;
+    // ponytail: labels are hidden on the vertical rail; they'd need their own counter-rotation.
+    BOOL showLabel = [BHTSettings boolForKey:@"restore_tab_labels"] && label.text.length &&
+                     !NFBGlassTabRailActive(item);
     CGFloat height = CGRectGetHeight(item.bounds);
     CGFloat width = CGRectGetWidth(item.bounds);
     UIView* overlay = label.superview;
@@ -911,12 +921,8 @@ void BHTLayoutGlassTabItem(UIView* item) {
     }
     label.hidden = !showLabel;
 
-    Ivar imageField = class_getInstanceVariable(object_getClass(item), "imageView");
-    UIImageView* imageView = imageField ? object_getIvar(item, imageField) : nil;
-    if (![imageView isKindOfClass:UIImageView.class]) return;
-
-    UIView* glyph = imageView.superview == item ? imageView : imageView.superview;
-    if (glyph.superview != item) return;
+    UIView* glyph = BHTGlassTabGlyph(item);
+    if (!glyph) return;
     glyph.center = CGPointMake(width / 2.0,
                                height / 2.0 - (showLabel && height >= 34.0 ? 5.0 : 0.0));
 }
@@ -986,6 +992,66 @@ void BHTApplyGlassTabLabels(UIView* bar) {
         if (![activeLabels containsObject:subview]) [subview removeFromSuperview];
     }
     if (!enabled) [overlay removeFromSuperview];
+}
+
+// MARK: - Vertical tab rail (unfolded / wide windows)
+
+static char BHTGlassTabRailKey;
+
+BOOL BHTGlassTabIsRail(UIView* bar) {
+    return objc_getAssociatedObject(bar, &BHTGlassTabRailKey) != nil;
+}
+
+// Rotates X's own glass bar 90° onto the right edge instead of rebuilding it,
+// so selection, badges and tab customization keep working natively.
+void BHTLayoutGlassTabRail(UIView* bar) {
+    UIWindow* window = bar.window;
+    UIView* parent = bar.superview;
+    // Unfolding doesn't always resize the items, so (un)rotate their icons from here.
+    Class itemClass = NSClassFromString(@"_TtC11XNavigation14TabBarItemView");
+    NSMutableArray<UIView*>* items = [NSMutableArray new];
+    if (itemClass) BHTCollectGlassTabItems(bar, itemClass, items);
+    for (UIView* item in items)
+        BHTRotateGlassTabGlyph(item);
+    if (!NFBGlassTabRailActive(bar) || !parent) {
+        if (BHTGlassTabIsRail(bar)) {
+            objc_setAssociatedObject(bar, &BHTGlassTabRailKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            bar.transform = CGAffineTransformIdentity;
+        }
+        return;
+    }
+    objc_setAssociatedObject(bar, &BHTGlassTabRailKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+
+    // Rotate around the item row (the visible pill), not the whole bar view.
+    Ivar rowField = class_getInstanceVariable(object_getClass(bar), "itemRow");
+    UIView* row = rowField ? object_getIvar(bar, rowField) : nil;
+    UIView* pill = [row isKindOfClass:UIView.class] && [row isDescendantOfView:bar] ? row : bar;
+    CGPoint rowCenter = [pill convertPoint:CGPointMake(CGRectGetMidX(pill.bounds), CGRectGetMidY(pill.bounds))
+                                    toView:bar];
+    CGPoint barCenter = CGPointMake(CGRectGetMidX(bar.bounds), CGRectGetMidY(bar.bounds));
+    CGPoint target = [parent convertPoint:CGPointMake(CGRectGetMaxX(window.bounds) - window.safeAreaInsets.right -
+                                                          NFBGlassTabRailInset / 2.0,
+                                                      CGRectGetMidY(window.bounds))
+                                 fromView:nil];
+    // Rotating +90° maps (x, y) to (-y, x): the leading tab ends up on top.
+    CGFloat dx = target.x - bar.center.x + (rowCenter.y - barCenter.y);
+    CGFloat dy = target.y - bar.center.y - (rowCenter.x - barCenter.x);
+    CGAffineTransform transform = CGAffineTransformConcat(CGAffineTransformMakeRotation(M_PI_2),
+                                                          CGAffineTransformMakeTranslation(dx, dy));
+    if (!CGAffineTransformEqualToTransform(bar.transform, transform)) bar.transform = transform;
+}
+
+void BHTRotateGlassTabGlyph(UIView* item) {
+    static char rotatedKey;
+    UIView* glyph = BHTGlassTabGlyph(item);
+    if (!glyph) return;
+    if (NFBGlassTabRailActive(item)) {
+        glyph.transform = CGAffineTransformMakeRotation(-M_PI_2);
+        objc_setAssociatedObject(glyph, &rotatedKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    } else if (objc_getAssociatedObject(glyph, &rotatedKey)) {
+        glyph.transform = CGAffineTransformIdentity;
+        objc_setAssociatedObject(glyph, &rotatedKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
 }
 
 void BHTApplyGlassTabAccent(UIView* item) {

@@ -59,6 +59,7 @@
 @property (nonatomic, strong) UIViewPropertyAnimator* columnAnimator;
 - (instancetype)initWithContent:(UIViewController*)content detail:(UINavigationController*)detail;
 - (BOOL)hasRoomForDetail;
+- (CGFloat)columnsWidthForWidth:(CGFloat)width;
 - (void)finishColumnAnimation;
 - (void)setDetailVisible:(BOOL)visible animated:(BOOL)animated completion:(void (^)(void))completion;
 @end
@@ -71,8 +72,12 @@
 @property (nonatomic, weak) UIViewController* primaryScreen;
 @property (nonatomic, weak) UIViewController* conversation;
 @property (nonatomic, strong) UIViewController* emptyController;
-@property (nonatomic, copy) NSArray<UIBarButtonItem*>* originalLeftItems;
-@property (nonatomic, strong) UIBarButtonItem* closeItem;
+// Each entry is how many controllers one "open in new column" moved into the
+// left column, so swiping back can return exactly those to the right column.
+@property (nonatomic, strong) NSMutableArray<NSNumber*>* shiftCounts;
+@property (nonatomic) BOOL primaryBarHidden;
+@property (nonatomic) BOOL primaryBarWasHidden;
+@property (nonatomic) BOOL swiping;
 @property (nonatomic) BOOL active;
 @property (nonatomic) BOOL collapsed;
 @property (nonatomic) BOOL updating;
@@ -81,6 +86,8 @@
 @property (nonatomic) BOOL nativeColumnTransitioning;
 - (BOOL)showConversation:(UIViewController*)controller
              fromPrimary:(UINavigationController*)primary;
+- (BOOL)advanceToConversation:(UIViewController*)controller;
+- (void)setUpDetailColumn;
 - (void)scheduleUpdate;
 - (void)discardHiddenDetail;
 @end
