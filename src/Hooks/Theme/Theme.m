@@ -1024,25 +1024,84 @@ void BHTApplyGlassTabLabels(UIView* bar) {
 }
 @end
 
-// Calls a tap recognizer's own target/actions with a synthetic tap at `point`.
-static BOOL BHTInvokeTapTargets(UITapGestureRecognizer* recognizer, CGPoint point) {
+// A press-and-release as X's tab bar sees it: its tab selection is a
+// "tracking" long press (the drag-between-tabs gesture), not a tap.
+@interface BHTSyntheticPress : UILongPressGestureRecognizer
+@property (nonatomic, weak) UIView* realView;
+@property (nonatomic) CGPoint windowPoint;
+@property (nonatomic) UIGestureRecognizerState fakeState;
+@end
+
+@implementation BHTSyntheticPress
+- (UIView*)view {
+    return self.realView;
+}
+- (UIGestureRecognizerState)state {
+    return self.fakeState;
+}
+- (NSUInteger)numberOfTouches {
+    return 1;
+}
+- (CGPoint)locationInView:(UIView*)view {
+    return view ? [view convertPoint:self.windowPoint fromView:nil] : self.windowPoint;
+}
+- (CGPoint)locationOfTouch:(NSUInteger)index inView:(UIView*)view {
+    return [self locationInView:view];
+}
+@end
+
+// Calls `block` with each target/action a recognizer would send to.
+static void BHTEachGestureTarget(UIGestureRecognizer* recognizer, void (^block)(id target, SEL action)) {
     Ivar targetsField = class_getInstanceVariable(UIGestureRecognizer.class, "_targets");
     NSArray* targets = targetsField ? object_getIvar(recognizer, targetsField) : nil;
-    if (![targets isKindOfClass:NSArray.class]) return NO;
-    BHTSyntheticTap* tap = [[BHTSyntheticTap alloc] initWithTarget:nil action:nil];
-    tap.realView = recognizer.view;
-    tap.windowPoint = point;
-    BOOL invoked = NO;
+    if (![targets isKindOfClass:NSArray.class]) return;
     for (id entry in targets) {
         Ivar targetField = class_getInstanceVariable(object_getClass(entry), "_target");
         Ivar actionField = class_getInstanceVariable(object_getClass(entry), "_action");
         if (!targetField || !actionField) continue;
         id target = object_getIvar(entry, targetField);
         SEL action = *(SEL*)((uint8_t*)(__bridge void*)entry + ivar_getOffset(actionField));
-        if (!target || !action || ![target respondsToSelector:action]) continue;
+        if (target && action && [target respondsToSelector:action]) block(target, action);
+    }
+}
+
+// Context-menu style actions ("secondary click") must never stand in for a tap.
+static BOOL BHTIsSecondaryAction(SEL action) {
+    return [NSStringFromSelector(action) rangeOfString:@"secondary" options:NSCaseInsensitiveSearch].location !=
+           NSNotFound;
+}
+
+// Calls a tap recognizer's own target/actions with a synthetic tap at `point`.
+static BOOL BHTInvokeTapTargets(UITapGestureRecognizer* recognizer, CGPoint point) {
+    BHTSyntheticTap* tap = [[BHTSyntheticTap alloc] initWithTarget:nil action:nil];
+    tap.realView = recognizer.view;
+    tap.windowPoint = point;
+    __block BOOL invoked = NO;
+    BHTEachGestureTarget(recognizer, ^(id target, SEL action) {
+        if (BHTIsSecondaryAction(action)) return;
         ((void (*)(id, SEL, id))objc_msgSend)(target, action, tap);
         invoked = YES;
-    }
+    });
+    return invoked;
+}
+
+// Replays a press at `point` (began, changed, ended) on a long press whose
+// action tracks touches, which is how X's bar picks the tab under a finger.
+static BOOL BHTInvokeTrackingPress(UILongPressGestureRecognizer* recognizer, CGPoint point) {
+    BHTSyntheticPress* press = [[BHTSyntheticPress alloc] initWithTarget:nil action:nil];
+    press.realView = recognizer.view;
+    press.windowPoint = point;
+    __block BOOL invoked = NO;
+    BHTEachGestureTarget(recognizer, ^(id target, SEL action) {
+        if ([NSStringFromSelector(action) rangeOfString:@"track" options:NSCaseInsensitiveSearch].location ==
+            NSNotFound) return;
+        for (NSNumber* state in @[@(UIGestureRecognizerStateBegan), @(UIGestureRecognizerStateChanged),
+                                  @(UIGestureRecognizerStateEnded)]) {
+            press.fakeState = state.integerValue;
+            ((void (*)(id, SEL, id))objc_msgSend)(target, action, press);
+        }
+        invoked = YES;
+    });
     return invoked;
 }
 
@@ -1090,6 +1149,12 @@ static NSString* BHTForwardTap(UIView* target, UIView* boundary) {
     if (inside) how = BHTControlTap(inside);
     for (UIView* view = target; !how && view; view = view.superview) {
         if ([view isKindOfClass:UIControl.class]) how = BHTControlTap((UIControl*)view);
+        for (UIGestureRecognizer* recognizer in view.gestureRecognizers) {
+            if (how || !recognizer.enabled || ![recognizer isKindOfClass:UILongPressGestureRecognizer.class]) continue;
+            if (BHTInvokeTrackingPress((UILongPressGestureRecognizer*)recognizer, point)) {
+                how = [NSString stringWithFormat:@"tracking press on %@", NSStringFromClass(view.class)];
+            }
+        }
         for (UIGestureRecognizer* recognizer in view.gestureRecognizers) {
             if (how || !BHTIsSingleTap(recognizer)) continue;
             if (BHTInvokeTapTargets((UITapGestureRecognizer*)recognizer, point)) {
@@ -1461,29 +1526,59 @@ static UIImage* BHTFirstImage(UIView* view) {
     if (button) BHTForwardTap(button, button);
 }
 
+// Grows `frame` (in `container` coordinates) by the visible views under `view`
+// that sit inside the side strip: the system-drawn bar, since iOS may not use
+// `tabBar` itself for the Duo strip layout.
+static void BHTAddStripViews(UIView* view, UIView* page, UIView* container, CGFloat stripMinX, CGRect* frame) {
+    for (UIView* subview in view.subviews) {
+        if (subview == page || subview.hidden || subview.alpha < 0.01) continue;
+        CGRect rect = [container convertRect:subview.bounds fromView:subview];
+        if (CGRectGetWidth(rect) > 0 && CGRectGetHeight(rect) > 0 && CGRectGetMinX(rect) >= stripMinX - 4.0 &&
+            CGRectGetHeight(rect) < CGRectGetHeight(container.bounds) * 0.9) {
+            *frame = CGRectUnion(*frame, rect);
+        }
+        BHTAddStripViews(subview, page, container, stripMinX, frame);
+    }
+}
+
 // Puts the compose button on top of the vertical bar, mirroring X's current
 // floating button (its icon, and whether the screen has one at all).
 - (void)layoutCompose {
-    UITabBar* tabBar = self.controller.tabBar;
     UIView* container = self.container;
-    CGRect bar = tabBar.window ? [container convertRect:tabBar.bounds fromView:tabBar] : CGRectZero;
-    BOOL rail = !tabBar.hidden && CGRectGetHeight(bar) > CGRectGetWidth(bar);
+    UIWindow* window = container.window;
+    CGFloat strip = window.safeAreaInsets.right;
+    // Same rule the rail uses for where Duo apps put a vertical bar.
+    BOOL rail = window && !container.hidden && strip >= 44.0 && NFBGlassTabRailActive(container);
+    CGRect bar = CGRectNull;
+    if (rail) {
+        CGFloat stripMinX = CGRectGetMaxX(container.bounds) - strip;
+        BHTAddStripViews(self.controller.view, self.controller.selectedViewController.viewIfLoaded, container,
+                         stripMinX, &bar);
+        if (CGRectIsNull(bar)) {
+            // Drawn outside our views: assume a bottom-aligned bar of ~56pt per tab.
+            CGFloat height = self.items.count * 56.0;
+            bar = CGRectMake(stripMinX + 4.0,
+                             CGRectGetMaxY(container.bounds) - window.safeAreaInsets.bottom - 12.0 - height,
+                             strip - 8.0, height);
+        }
+    }
     if (rail != self.railLayout) {
         self.railLayout = rail;
         for (UIView* button in BHTFloatingButtons().allObjects)
             BHTApplyFloatingButtonHidden(button);
     }
-    UIView* floating = rail ? BHTCurrentFloatingButton(self.bar.window) : nil;
+    UIView* floating = rail ? BHTCurrentFloatingButton(window) : nil;
     self.compose.hidden = !floating;
     if (!floating) return;
     if (self.compose.superview != container) [container addSubview:self.compose];
+    if (container.subviews.lastObject != self.compose) [container bringSubviewToFront:self.compose];
     UIImage* image = BHTFirstImage(floating) ?: [UIImage systemImageNamed:@"plus"];
     if ([self.composeButton imageForState:UIControlStateNormal] != image) {
         [self.composeButton setImage:[image imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate]
                             forState:UIControlStateNormal];
     }
     self.composeButton.accessibilityLabel = floating.accessibilityLabel;
-    CGFloat size = MIN(CGRectGetWidth(bar), 56.0);
+    CGFloat size = MIN(MIN(CGRectGetWidth(bar), strip - 8.0), 56.0);
     CGRect frame = CGRectMake(CGRectGetMidX(bar) - size / 2.0, CGRectGetMinY(bar) - 12.0 - size, size, size);
     if (!CGRectEqualToRect(self.compose.frame, frame)) {
         self.compose.frame = frame;

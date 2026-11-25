@@ -41,9 +41,16 @@
   runtime classes or use the view selector on the tab bar.
 
 - Forwarding taps to X: X's handlers hit-test the bar, and hidden views can't be hit, so the
-  replaced bar is briefly shown (`BHTShowingForTap`) while a tap is delivered. Only single-tap
-  recognizers are used, since Home has others (one opened the account switcher). If X doesn't end up
-  on the tab, an alert lists how the tap went and the item's recognizers and actions.
+  replaced bar is briefly shown (`BHTShowingForTap`) while a tap is delivered. On-device diagnostics
+  (X 12.46) showed how `XNavigation.TabBarView` selects tabs: a `UILongPressGestureRecognizer` with
+  action `handleTracking:` (the drag-between-tabs gesture). It also has a `UITapGestureRecognizer`
+  with action `handleSecondaryClick:`, the context menu that opened the account switcher on Home. The
+  tweak replays began/changed/ended on the tracking press, and never calls actions named
+  "secondary". If X doesn't end up on the tab, an alert lists how the tap went and the item's
+  recognizers and actions.
+- The compose button decides "vertical" with the rail's rule (`NFBGlassTabRailActive` plus a side
+  strip). It finds the system bar by looking for the tab controller's views that sit inside the strip,
+  because `tabBar` isn't what the Duo strip layout draws.
 - While the native bar is vertical, X's floating compose button (`TFNFloatingActionButton`, one per
   screen) is hidden and a tinted glass button above the bar taps the current one.
 - On iOS 27.1, content that reaches the side strip gets X's top-bar buttons moved into the strip, and
