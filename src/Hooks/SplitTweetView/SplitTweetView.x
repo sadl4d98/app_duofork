@@ -246,17 +246,6 @@
     }
 }
 
-// The left column hides its bar only while it shows controllers shifted out
-// of the right column, and restores whatever X had before.
-- (void)updatePrimaryBar {
-    UINavigationController* primary = self.primary;
-    BOOL hide = primary && self.active && !self.collapsed && self.shiftCounts.count > 0;
-    if (hide == self.primaryBarHidden) return;
-    if (hide) self.primaryBarWasHidden = primary.navigationBarHidden;
-    self.primaryBarHidden = hide;
-    [primary setNavigationBarHidden:hide || self.primaryBarWasHidden animated:NO];
-}
-
 - (void)setUpDetailColumn {
     UINavigationController* detail = self.detail;
     // The "Post" title is all that lives in the column's bar; back is a swipe.
@@ -270,27 +259,12 @@
 - (BOOL)gestureRecognizerShouldBegin:(UIGestureRecognizer*)gesture {
     if (!self.active || self.collapsed || self.updating || self.swiping ||
         self.detail.presentedViewController || self.detail.transitionCoordinator) return NO;
-    UIPanGestureRecognizer* pan = (UIPanGestureRecognizer*)gesture;
-    CGPoint velocity = [pan velocityInView:pan.view];
-    if (velocity.x <= fabs(velocity.y)) return NO;
-    // Leave horizontal scrollers (media carousels) alone while they can still scroll back.
-    UIView* hit = [pan.view hitTest:[pan locationInView:pan.view] withEvent:nil];
-    for (UIView* view = hit; view && view != pan.view; view = view.superview) {
-        if (![view isKindOfClass:UIScrollView.class]) continue;
-        UIScrollView* scroll = (UIScrollView*)view;
-        if (scroll.contentSize.width > CGRectGetWidth(scroll.bounds) &&
-            scroll.contentOffset.x > -scroll.adjustedContentInset.left + 1.0) return NO;
-    }
-    return YES;
+    return BHTIsBackSwipeStart((UIPanGestureRecognizer*)gesture);
 }
 
 - (BOOL)gestureRecognizer:(UIGestureRecognizer*)gesture
     shouldBeRequiredToFailByGestureRecognizer:(UIGestureRecognizer*)other {
-    // Vertical scrolling in the column waits until this has ruled out a back swipe.
-    UIView* view = other.view;
-    return [other isKindOfClass:UIPanGestureRecognizer.class] && [view isKindOfClass:UIScrollView.class] &&
-           ((UIScrollView*)view).contentSize.width <= CGRectGetWidth(view.bounds) &&
-           [view isDescendantOfView:gesture.view];
+    return BHTBackSwipeBlocksScrolling(gesture, other);
 }
 
 - (void)handleBackPan:(UIPanGestureRecognizer*)pan {
@@ -337,24 +311,10 @@
 // Called once the right column has slid off screen.
 - (void)goBack {
     UINavigationController* detail = self.detail;
-    UINavigationController* primary = self.primary;
     UIView* column = detail.view;
-    NSArray<UIViewController*>* stack = primary.viewControllers;
-    NSUInteger count = self.shiftCounts.lastObject.unsignedIntegerValue;
     if (detail.viewControllers.count > 1) {
-        // Something (a profile, media) was pushed inside the column: pop it.
+        // A post, profile or media opened inside the column: pop it.
         [detail popViewControllerAnimated:NO];
-    } else if (count && count < stack.count && primary.topViewController == self.primaryScreen) {
-        // Return the left column's newest page to the right column.
-        self.updating = YES;
-        [self.shiftCounts removeLastObject];
-        NSArray<UIViewController*>* moving = [stack subarrayWithRange:NSMakeRange(stack.count - count, count)];
-        [primary setViewControllers:[stack subarrayWithRange:NSMakeRange(0, stack.count - count)] animated:NO];
-        [detail setViewControllers:moving animated:NO];
-        self.primaryScreen = primary.topViewController;
-        self.conversation = moving.firstObject;
-        [self updatePrimaryBar];
-        self.updating = NO;
     } else {
         // Nothing left to go back to: close the column from where it already is.
         column.transform = CGAffineTransformIdentity;
@@ -374,47 +334,6 @@
                      }];
 }
 
-// A post opened from the right column: shift the right column's page into the
-// left column and open the new post on the right.
-- (BOOL)advanceToConversation:(UIViewController*)controller {
-    UINavigationController* primary = self.primary;
-    UINavigationController* detail = self.detail;
-    NSArray<UIViewController*>* moving = detail.viewControllers;
-    if (self.updating || self.swiping || !self.active || self.collapsed || !primary ||
-        ![self hasRoomForDetail] || primary != [self currentPrimary] ||
-        primary.presentedViewController || detail.presentedViewController ||
-        primary.transitionCoordinator || detail.transitionCoordinator ||
-        controller.parentViewController || primary.topViewController != self.primaryScreen ||
-        !moving.count || moving.firstObject != self.conversation) {
-        return NO;
-    }
-    [self.glassHost finishColumnAnimation];
-    self.updating = YES;
-    // A controller must leave one navigation stack before joining the other.
-    [detail setViewControllers:@[controller] animated:NO];
-    [primary setViewControllers:[primary.viewControllers arrayByAddingObjectsFromArray:moving] animated:NO];
-    if (!self.shiftCounts) self.shiftCounts = [NSMutableArray new];
-    [self.shiftCounts addObject:@(moving.count)];
-    self.primaryScreen = moving.lastObject;
-    self.conversation = controller;
-    BHTMarkScrollToReplies(controller);
-    [self updatePrimaryBar];
-    self.updating = NO;
-
-    UIView* column = detail.view;
-    column.transform = CGAffineTransformMakeTranslation(CGRectGetWidth(column.bounds), 0);
-    [UIView animateWithDuration:0.35
-                          delay:0
-         usingSpringWithDamping:0.9
-          initialSpringVelocity:0
-                        options:UIViewAnimationOptionAllowUserInteraction
-                     animations:^{
-                         column.transform = CGAffineTransformIdentity;
-                     }
-                     completion:nil];
-    return YES;
-}
-
 - (void)clearDetail {
     [self clearDetailAnimated:NO];
 }
@@ -429,8 +348,7 @@
     [self.glassHost finishColumnAnimation];
     self.active = NO;
     self.collapsed = NO;
-    [self.shiftCounts removeAllObjects];
-    [self updatePrimaryBar];
+    self.detail.viewIfLoaded.alpha = 1.0;
     self.conversation = nil;
     self.primaryScreen = nil;
     self.primary = nil;
@@ -464,11 +382,6 @@
     }
 
     self.updating = YES;
-    if (primary != self.primary || primary.topViewController != self.primaryScreen) {
-        // A new anchor: earlier column history no longer applies.
-        [self.shiftCounts removeAllObjects];
-        [self updatePrimaryBar];
-    }
     self.primary = primary;
     self.primaryScreen = primary.topViewController;
     self.conversation = controller;
@@ -476,7 +389,7 @@
     // X has already built this controller, including the account, tweet model,
     // reply sorting and navigation metadata. Only its destination changes.
     [self.detail setViewControllers:@[controller] animated:NO];
-    BHTMarkScrollToReplies(controller);
+    BHTMarkScrollToReplies(controller, self.detail.view);
     [self setDetailVisible:YES animated:YES];
     self.updating = NO;
     return YES;
@@ -530,7 +443,7 @@
 
     BOOL hasRoom = [self hasRoomForDetail];
     if (selected != primary) {
-        if (self.collapsed || !hasRoom || self.shiftCounts.count || BHTTweetStateForController(selected) != self ||
+        if (self.collapsed || !hasRoom || BHTTweetStateForController(selected) != self ||
             !selected.topViewController || BHTIsConversationController(selected.topViewController) ||
             selected.viewIfLoaded.window != self.split.viewIfLoaded.window ||
             primary.topViewController != self.primaryScreen ||
@@ -563,7 +476,6 @@
             [self.detail setViewControllers:detailStack animated:NO];
             self.collapsed = NO;
             [self setDetailVisible:YES];
-            [self updatePrimaryBar];
             self.updating = NO;
         }
     } else if (primary.topViewController != self.primaryScreen) {
@@ -574,7 +486,7 @@
         NSArray* detailStack = self.detail.viewControllers;
         [self.detail setViewControllers:@[self.emptyController] animated:NO];
         self.collapsed = YES;
-        [self updatePrimaryBar];
+        self.detail.viewIfLoaded.alpha = 1.0;
         [primary setViewControllers:[primaryStack arrayByAddingObjectsFromArray:detailStack] animated:NO];
         [self setDetailVisible:NO];
         self.updating = NO;
@@ -778,6 +690,21 @@
 
 - (void)setNavigationBarHidden:(BOOL)hidden animated:(BOOL)animated {
     %orig(BHTSplitColumnBarHidden(self, hidden), animated);
+}
+
+%end
+
+// Liquid Glass: no "Post" bar above posts anywhere; a right swipe goes back.
+%hook T1ConversationContainerViewController
+
+- (void)viewWillAppear:(BOOL)animated {
+    %orig;
+    BHTConversationWillAppear((UIViewController*)self, animated);
+}
+
+- (void)viewWillDisappear:(BOOL)animated {
+    %orig;
+    BHTConversationWillDisappear((UIViewController*)self, animated);
 }
 
 %end

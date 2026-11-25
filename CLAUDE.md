@@ -11,14 +11,24 @@
     `_TtC11XNavigation10TabBarView`, so X won't get the native rail by itself.
   - The behavior depends on the SDK of X's own binary, not the tweak's `sdk_version`. Raising the
     tweak's SDK in `build.yml` won't turn the rail on.
-  - Current workaround: `BHTLayoutGlassTabRail` (`src/Hooks/Theme/Theme.m`) rotates X's bar onto the
-    right edge when the window is at least 800pt wide. The split columns leave `NFBGlassTabRailInset`
-    (`src/Hooks/HookHelpers.h`) for it.
+  - Current workaround: `BHTGlassTabRail` (`src/Hooks/Theme/Theme.m`) is a native glass rail on the
+    right edge when the window is at least 800pt wide. X's bar stays in the hierarchy but hidden, and
+    each rail button forwards its tap to X's own tab item (UIControl actions, else the tap
+    recognizer's targets). The split columns leave `NFBGlassTabRailInset` (`src/Hooks/HookHelpers.h`) for it.
+  - Rotating X's bar instead was tried and failed: X minimizes and animates the bar with its own
+    transforms.
   - A native rail would mean hosting a real `UITabBarController`/`UITabBar` that mirrors X's tabs and
     forwards tab selection to X's controller. That only works once X's binary is built with the
     iOS 27.1+ SDK.
 - To inspect class names on device: turn on the `flex_twitter` setting (bundled FLEX), then search
   runtime classes or use the view selector on the tab bar.
+
+## Split view decisions
+
+- Keep the split at two columns. A post opened from the right column pushes inside that column. The
+  user found more columns disorienting.
+- Back is a right swipe on the right column, with no close button. Posts never show the "Post" bar
+  when Liquid Glass is on.
 
 ## Builds
 

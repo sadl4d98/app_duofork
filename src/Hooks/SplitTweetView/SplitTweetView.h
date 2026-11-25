@@ -14,5 +14,9 @@ void BHTAttachTweetColumn(T1AppSplitViewController* split, BHTSplitTweetHostCont
 UIView* BHTTweetColumnAppView(BHTSplitTweetHostController* host);
 void BHTLayoutTweetColumnChrome(BHTSplitTweetHostController* host);
 BOOL BHTSplitColumnBarHidden(UINavigationController* navigation, BOOL hidden);
-void BHTMarkScrollToReplies(UIViewController* conversation);
+void BHTMarkScrollToReplies(UIViewController* conversation, UIView* column);
 void BHTScrollPastFocalIfNeeded(UIView* focal);
+BOOL BHTIsBackSwipeStart(UIPanGestureRecognizer* pan);
+BOOL BHTBackSwipeBlocksScrolling(UIGestureRecognizer* gesture, UIGestureRecognizer* other);
+void BHTConversationWillAppear(UIViewController* conversation, BOOL animated);
+void BHTConversationWillDisappear(UIViewController* conversation, BOOL animated);

@@ -895,21 +895,11 @@ static NSString* BHTGlassTabItemTitle(UIView* item, UIView* bar) {
     return nil;
 }
 
-static UIView* BHTGlassTabGlyph(UIView* item) {
-    Ivar imageField = class_getInstanceVariable(object_getClass(item), "imageView");
-    UIImageView* imageView = imageField ? object_getIvar(item, imageField) : nil;
-    if (![imageView isKindOfClass:UIImageView.class]) return nil;
-    UIView* glyph = imageView.superview == item ? imageView : imageView.superview;
-    return glyph.superview == item ? glyph : nil;
-}
-
 void BHTLayoutGlassTabItem(UIView* item) {
     UILabel* label = objc_getAssociatedObject(item, &BHTGlassTabLabelKey);
     if (!label) return;
 
-    // ponytail: labels are hidden on the vertical rail; they'd need their own counter-rotation.
-    BOOL showLabel = [BHTSettings boolForKey:@"restore_tab_labels"] && label.text.length &&
-                     !NFBGlassTabRailActive(item);
+    BOOL showLabel = [BHTSettings boolForKey:@"restore_tab_labels"] && label.text.length;
     CGFloat height = CGRectGetHeight(item.bounds);
     CGFloat width = CGRectGetWidth(item.bounds);
     UIView* overlay = label.superview;
@@ -921,15 +911,20 @@ void BHTLayoutGlassTabItem(UIView* item) {
     }
     label.hidden = !showLabel;
 
-    UIView* glyph = BHTGlassTabGlyph(item);
-    if (!glyph) return;
+    Ivar imageField = class_getInstanceVariable(object_getClass(item), "imageView");
+    UIImageView* imageView = imageField ? object_getIvar(item, imageField) : nil;
+    if (![imageView isKindOfClass:UIImageView.class]) return;
+
+    UIView* glyph = imageView.superview == item ? imageView : imageView.superview;
+    if (glyph.superview != item) return;
     glyph.center = CGPointMake(width / 2.0,
                                height / 2.0 - (showLabel && height >= 34.0 ? 5.0 : 0.0));
 }
 
-void BHTApplyGlassTabLabels(UIView* bar) {
+// The bar's tab items in visual order (leading to trailing).
+static NSArray<UIView*>* BHTSortedGlassTabItems(UIView* bar) {
     Class itemClass = NSClassFromString(@"_TtC11XNavigation14TabBarItemView");
-    if (!itemClass) return;
+    if (!itemClass) return @[];
 
     Ivar rowField = class_getInstanceVariable(object_getClass(bar), "itemRow");
     UIView* row = rowField ? object_getIvar(bar, rowField) : nil;
@@ -942,14 +937,20 @@ void BHTApplyGlassTabLabels(UIView* bar) {
         return firstX < secondX ? NSOrderedAscending
                                 : (firstX > secondX ? NSOrderedDescending : NSOrderedSame);
     }];
+    return items;
+}
 
-    NSInteger selectedIndex = NSNotFound;
+static NSInteger BHTGlassTabSelectedIndex(UIView* bar) {
     Ivar selectedField = class_getInstanceVariable(object_getClass(bar), "selectedIndex");
-    if (selectedField) {
-        // Swift.Int is pointer-sized on this arm64-only target.
-        selectedIndex = *(NSInteger*)((uint8_t*)(__bridge void*)bar +
-                                      ivar_getOffset(selectedField));
-    }
+    // Swift.Int is pointer-sized on this arm64-only target.
+    return selectedField ? *(NSInteger*)((uint8_t*)(__bridge void*)bar + ivar_getOffset(selectedField))
+                         : NSNotFound;
+}
+
+void BHTApplyGlassTabLabels(UIView* bar) {
+    NSArray<UIView*>* items = BHTSortedGlassTabItems(bar);
+    if (!items.count) return;
+    NSInteger selectedIndex = BHTGlassTabSelectedIndex(bar);
 
     BOOL enabled = [BHTSettings boolForKey:@"restore_tab_labels"];
     UIView* overlay = objc_getAssociatedObject(bar, &BHTGlassTabOverlayKey);
@@ -996,62 +997,328 @@ void BHTApplyGlassTabLabels(UIView* bar) {
 
 // MARK: - Vertical tab rail (unfolded / wide windows)
 
+// X's glass bar is hidden on wide windows and this native rail stands in for
+// it on the right edge. Each button forwards its tap to X's own tab item, so X
+// keeps owning selection, tab customization and navigation.
+
+@interface BHTSyntheticTap : UITapGestureRecognizer
+@property (nonatomic, weak) UIView* realView;
+@property (nonatomic) CGPoint windowPoint;
+@end
+
+@implementation BHTSyntheticTap
+- (UIView*)view {
+    return self.realView;
+}
+- (UIGestureRecognizerState)state {
+    return UIGestureRecognizerStateEnded;
+}
+- (NSUInteger)numberOfTouches {
+    return 1;
+}
+- (CGPoint)locationInView:(UIView*)view {
+    return view ? [view convertPoint:self.windowPoint fromView:nil] : self.windowPoint;
+}
+- (CGPoint)locationOfTouch:(NSUInteger)index inView:(UIView*)view {
+    return [self locationInView:view];
+}
+@end
+
+// Calls a tap recognizer's own target/actions with a synthetic tap at `point`.
+static BOOL BHTInvokeTapTargets(UITapGestureRecognizer* recognizer, CGPoint point) {
+    Ivar targetsField = class_getInstanceVariable(UIGestureRecognizer.class, "_targets");
+    NSArray* targets = targetsField ? object_getIvar(recognizer, targetsField) : nil;
+    if (![targets isKindOfClass:NSArray.class]) return NO;
+    BHTSyntheticTap* tap = [[BHTSyntheticTap alloc] initWithTarget:nil action:nil];
+    tap.realView = recognizer.view;
+    tap.windowPoint = point;
+    BOOL invoked = NO;
+    for (id entry in targets) {
+        Ivar targetField = class_getInstanceVariable(object_getClass(entry), "_target");
+        Ivar actionField = class_getInstanceVariable(object_getClass(entry), "_action");
+        if (!targetField || !actionField) continue;
+        id target = object_getIvar(entry, targetField);
+        SEL action = *(SEL*)((uint8_t*)(__bridge void*)entry + ivar_getOffset(actionField));
+        if (!target || !action || ![target respondsToSelector:action]) continue;
+        ((void (*)(id, SEL, id))objc_msgSend)(target, action, tap);
+        invoked = YES;
+    }
+    return invoked;
+}
+
+static BOOL BHTForwardTapToGlassTab(UIView* item, UIView* bar) {
+    CGPoint point = [item convertPoint:CGPointMake(CGRectGetMidX(item.bounds), CGRectGetMidY(item.bounds))
+                                toView:nil];
+    for (UIView* view = item; view; view = view.superview) {
+        if ([view isKindOfClass:UIControl.class]) {
+            UIControl* control = (UIControl*)view;
+            UIControlEvents events = control.allControlEvents;
+            for (NSNumber* event in @[@(UIControlEventPrimaryActionTriggered), @(UIControlEventTouchUpInside),
+                                      @(UIControlEventTouchDown)]) {
+                if (events & event.unsignedIntegerValue) {
+                    [control sendActionsForControlEvents:event.unsignedIntegerValue];
+                    return YES;
+                }
+            }
+        }
+        for (UIGestureRecognizer* recognizer in view.gestureRecognizers) {
+            if (recognizer.enabled && [recognizer isKindOfClass:UITapGestureRecognizer.class] &&
+                BHTInvokeTapTargets((UITapGestureRecognizer*)recognizer, point)) return YES;
+        }
+        if (view == bar) break;
+    }
+    for (UIView* view = item; view && view != bar.superview; view = view.superview) {
+        if ([view accessibilityActivate]) return YES;
+    }
+    return NO;
+}
+
+// ponytail: debug aid. If X's bar ever selects tabs some other way, this shows
+// what is there so forwarding can be fixed. Remove once forwarding is proven.
+static void BHTReportGlassTabForwardFailure(UIView* item, UIView* bar) {
+    static BOOL reported;
+    if (reported) return;
+    reported = YES;
+    NSMutableString* info = [NSMutableString new];
+    for (UIView* view = item; view; view = view.superview) {
+        [info appendFormat:@"%@", NSStringFromClass(view.class)];
+        for (UIGestureRecognizer* recognizer in view.gestureRecognizers) {
+            [info appendFormat:@" [%@]", NSStringFromClass(recognizer.class)];
+        }
+        [info appendString:@"\n"];
+        if (view == bar) break;
+    }
+    UIViewController* top = bar.window.rootViewController;
+    while (top.presentedViewController)
+        top = top.presentedViewController;
+    UIAlertController* alert = [UIAlertController alertControllerWithTitle:@"Tab rail couldn't switch tabs"
+                                                                   message:info
+                                                            preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:@"Copy"
+                                              style:UIAlertActionStyleDefault
+                                            handler:^(UIAlertAction* action) {
+                                                UIPasteboard.generalPasteboard.string = info;
+                                            }]];
+    [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleCancel handler:nil]];
+    [top presentViewController:alert animated:YES completion:nil];
+}
+
+static UIImage* BHTGlassTabItemImage(UIView* item) {
+    Ivar imageField = class_getInstanceVariable(object_getClass(item), "imageView");
+    UIImageView* imageView = imageField ? object_getIvar(item, imageField) : nil;
+    UIImage* image = [imageView isKindOfClass:UIImageView.class] ? imageView.image : nil;
+    return image.renderingMode == UIImageRenderingModeAlwaysOriginal
+               ? image
+               : [image imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+}
+
+static NSString* BHTGlassTabItemBadge(UIView* view) {
+    for (UIView* subview in view.subviews) {
+        if (subview.hidden || subview.alpha < 0.01) continue;
+        if ([subview isKindOfClass:UILabel.class] && ((UILabel*)subview).text.length) {
+            return ((UILabel*)subview).text;
+        }
+        NSString* badge = BHTGlassTabItemBadge(subview);
+        if (badge) return badge;
+    }
+    return nil;
+}
+
+static const CGFloat BHTGlassTabRailButton = 52.0;
+static const CGFloat BHTGlassTabRailPadding = 8.0;
+
+@interface BHTGlassTabRail : UIView
+@property (nonatomic, weak) UIView* bar;
+@property (nonatomic, strong) UIVisualEffectView* background;
+@property (nonatomic, strong) UIView* selection;
+@property (nonatomic, strong) NSMutableArray<UIButton*>* buttons;
+@property (nonatomic, strong) NSMutableArray<UILabel*>* badges;
+@property (nonatomic, copy) NSArray<UIView*>* items;
+@property (nonatomic) NSInteger selectedIndex;
+@end
+
+@implementation BHTGlassTabRail
+
+- (instancetype)initWithBar:(UIView*)bar {
+    self = [super initWithFrame:CGRectZero];
+    if (!self) return nil;
+    _bar = bar;
+    _buttons = [NSMutableArray new];
+    _badges = [NSMutableArray new];
+    Class glassClass = NSClassFromString(@"UIGlassEffect");
+    UIVisualEffect* effect =
+        [glassClass respondsToSelector:@selector(effectWithStyle:)]
+            ? ((UIVisualEffect * (*)(id, SEL, NSInteger)) objc_msgSend)(glassClass, @selector(effectWithStyle:), 0)
+            : [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemChromeMaterial];
+    _background = [[UIVisualEffectView alloc] initWithEffect:effect];
+    _background.clipsToBounds = YES;
+    _background.layer.cornerCurve = kCACornerCurveContinuous;
+    [self addSubview:_background];
+    _selection = [UIView new];
+    _selection.backgroundColor = UIColor.tertiarySystemFillColor;
+    _selection.userInteractionEnabled = NO;
+    [_background.contentView addSubview:_selection];
+    return self;
+}
+
+- (CGSize)railSize {
+    NSUInteger count = self.buttons.count;
+    return CGSizeMake(BHTGlassTabRailButton + 2 * BHTGlassTabRailPadding,
+                      count * BHTGlassTabRailButton + 2 * BHTGlassTabRailPadding);
+}
+
+- (void)reload {
+    UIView* bar = self.bar;
+    NSArray<UIView*>* items = BHTSortedGlassTabItems(bar);
+    while (self.buttons.count < items.count) {
+        UIButton* button = [UIButton buttonWithType:UIButtonTypeSystem];
+        [button addTarget:self action:@selector(didTapButton:) forControlEvents:UIControlEventTouchUpInside];
+        [self.background.contentView addSubview:button];
+        [self.buttons addObject:button];
+        UILabel* badge = [UILabel new];
+        badge.font = [UIFont systemFontOfSize:11.0 weight:UIFontWeightSemibold];
+        badge.textColor = UIColor.whiteColor;
+        badge.textAlignment = NSTextAlignmentCenter;
+        badge.backgroundColor = UIColor.systemBlueColor;
+        badge.clipsToBounds = YES;
+        badge.userInteractionEnabled = NO;
+        [self.background.contentView addSubview:badge];
+        [self.badges addObject:badge];
+    }
+    while (self.buttons.count > items.count) {
+        [self.buttons.lastObject removeFromSuperview];
+        [self.buttons removeLastObject];
+        [self.badges.lastObject removeFromSuperview];
+        [self.badges removeLastObject];
+    }
+    self.items = items;
+    self.selectedIndex = BHTGlassTabSelectedIndex(bar);
+    UIColor* selectedColor = [BHTSettings boolForKey:@"tab_bar_theming"] ? (CurrentAccentColor() ?: UIColor.labelColor)
+                                                                         : UIColor.labelColor;
+    for (NSUInteger index = 0; index < items.count; index++) {
+        UIButton* button = self.buttons[index];
+        BOOL selected = (NSInteger)index == self.selectedIndex;
+        [button setImage:BHTGlassTabItemImage(items[index]) forState:UIControlStateNormal];
+        button.tintColor = selected ? selectedColor : UIColor.secondaryLabelColor;
+        button.tag = index;
+        button.accessibilityLabel = BHTGlassTabItemTitle(items[index], bar);
+        button.accessibilityTraits = UIAccessibilityTraitButton | (selected ? UIAccessibilityTraitSelected : 0);
+        NSString* badge = BHTGlassTabItemBadge(items[index]);
+        self.badges[index].text = badge;
+        self.badges[index].hidden = !badge.length;
+    }
+    [self setNeedsLayout];
+}
+
+- (void)layoutSubviews {
+    [super layoutSubviews];
+    self.background.frame = self.bounds;
+    self.background.layer.cornerRadius = CGRectGetWidth(self.bounds) / 2.0;
+    self.selection.hidden = YES;
+    for (NSUInteger index = 0; index < self.buttons.count; index++) {
+        CGRect frame = CGRectMake(BHTGlassTabRailPadding, BHTGlassTabRailPadding + index * BHTGlassTabRailButton,
+                                  BHTGlassTabRailButton, BHTGlassTabRailButton);
+        self.buttons[index].frame = frame;
+        UILabel* badge = self.badges[index];
+        CGFloat width = MAX(18.0, [badge sizeThatFits:CGSizeZero].width + 10.0);
+        badge.frame = CGRectMake(CGRectGetMaxX(frame) - width - 2.0, CGRectGetMinY(frame) + 4.0, width, 18.0);
+        badge.layer.cornerRadius = 9.0;
+        if ((NSInteger)index == self.selectedIndex) {
+            self.selection.hidden = NO;
+            self.selection.frame = CGRectInset(frame, 2.0, 2.0);
+            self.selection.layer.cornerRadius = CGRectGetWidth(self.selection.frame) / 2.0;
+        }
+    }
+}
+
+- (void)didTapButton:(UIButton*)button {
+    UIView* bar = self.bar;
+    if (button.tag >= (NSInteger)self.items.count || !bar) return;
+    UIView* item = self.items[button.tag];
+    if (!BHTForwardTapToGlassTab(item, bar)) BHTReportGlassTabForwardFailure(item, bar);
+    // Selection updates once X has handled the tap.
+    __weak BHTGlassTabRail* weakSelf = self;
+    for (NSNumber* delay in @[@0.05, @0.4]) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay.doubleValue * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), ^{
+                           [weakSelf reload];
+                       });
+    }
+}
+
+@end
+
 static char BHTGlassTabRailKey;
+static char BHTGlassTabRequestedHiddenKey;
+static char BHTGlassTabRailScheduledKey;
 
 BOOL BHTGlassTabIsRail(UIView* bar) {
     return objc_getAssociatedObject(bar, &BHTGlassTabRailKey) != nil;
 }
 
-// Rotates X's own glass bar 90° onto the right edge instead of rebuilding it,
-// so selection, badges and tab customization keep working natively.
-void BHTLayoutGlassTabRail(UIView* bar) {
+static BOOL BHTHidingGlassTabBar;
+
+BOOL BHTGlassTabHiddenRequest(UIView* bar, BOOL hidden) {
+    if (!BHTHidingGlassTabBar) {
+        objc_setAssociatedObject(bar, &BHTGlassTabRequestedHiddenKey, @(hidden), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        BHTGlassTabRail* rail = objc_getAssociatedObject(bar, &BHTGlassTabRailKey);
+        rail.hidden = hidden;
+    }
+    return hidden || BHTGlassTabIsRail(bar);
+}
+
+void BHTUpdateGlassTabRail(UIView* bar) {
+    BHTGlassTabRail* rail = objc_getAssociatedObject(bar, &BHTGlassTabRailKey);
     UIWindow* window = bar.window;
-    UIView* parent = bar.superview;
-    // Unfolding doesn't always resize the items, so (un)rotate their icons from here.
-    Class itemClass = NSClassFromString(@"_TtC11XNavigation14TabBarItemView");
-    NSMutableArray<UIView*>* items = [NSMutableArray new];
-    if (itemClass) BHTCollectGlassTabItems(bar, itemClass, items);
-    for (UIView* item in items)
-        BHTRotateGlassTabGlyph(item);
-    if (!NFBGlassTabRailActive(bar) || !parent) {
-        if (BHTGlassTabIsRail(bar)) {
+    if (!NFBGlassTabRailActive(bar) || !bar.superview) {
+        if (rail) {
+            [rail removeFromSuperview];
             objc_setAssociatedObject(bar, &BHTGlassTabRailKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-            bar.transform = CGAffineTransformIdentity;
+            bar.hidden = [objc_getAssociatedObject(bar, &BHTGlassTabRequestedHiddenKey) boolValue];
         }
         return;
     }
-    objc_setAssociatedObject(bar, &BHTGlassTabRailKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    if (!rail) {
+        rail = [[BHTGlassTabRail alloc] initWithBar:bar];
+        objc_setAssociatedObject(bar, &BHTGlassTabRailKey, rail, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        rail.hidden = [objc_getAssociatedObject(bar, &BHTGlassTabRequestedHiddenKey) boolValue];
+    }
+    if (!bar.hidden) {
+        BHTHidingGlassTabBar = YES;
+        bar.hidden = YES;
+        BHTHidingGlassTabBar = NO;
+    }
+    [rail reload];
 
-    // Rotate around the item row (the visible pill), not the whole bar view.
-    Ivar rowField = class_getInstanceVariable(object_getClass(bar), "itemRow");
-    UIView* row = rowField ? object_getIvar(bar, rowField) : nil;
-    UIView* pill = [row isKindOfClass:UIView.class] && [row isDescendantOfView:bar] ? row : bar;
-    CGPoint rowCenter = [pill convertPoint:CGPointMake(CGRectGetMidX(pill.bounds), CGRectGetMidY(pill.bounds))
-                                    toView:bar];
-    CGPoint barCenter = CGPointMake(CGRectGetMidX(bar.bounds), CGRectGetMidY(bar.bounds));
-    CGPoint target = [parent convertPoint:CGPointMake(CGRectGetMaxX(window.bounds) - window.safeAreaInsets.right -
-                                                          NFBGlassTabRailInset / 2.0,
-                                                      CGRectGetMidY(window.bounds))
-                                 fromView:nil];
-    // Rotating +90° maps (x, y) to (-y, x): the leading tab ends up on top.
-    CGFloat dx = target.x - bar.center.x + (rowCenter.y - barCenter.y);
-    CGFloat dy = target.y - bar.center.y - (rowCenter.x - barCenter.x);
-    CGAffineTransform transform = CGAffineTransformConcat(CGAffineTransformMakeRotation(M_PI_2),
-                                                          CGAffineTransformMakeTranslation(dx, dy));
-    if (!CGAffineTransformEqualToTransform(bar.transform, transform)) bar.transform = transform;
+    CGSize size = [rail railSize];
+    CGRect target = CGRectMake(CGRectGetMaxX(window.bounds) - window.safeAreaInsets.right -
+                                   (NFBGlassTabRailInset + size.width) / 2.0,
+                               CGRectGetMidY(window.bounds) - size.height / 2.0, size.width, size.height);
+    // Host the rail in the nearest ancestor that covers it, so it receives touches.
+    UIView* host = bar.superview;
+    while (host.superview && !CGRectContainsRect(host.bounds, [host convertRect:target fromView:nil]))
+        host = host.superview;
+    if (rail.superview != host) [host addSubview:rail];
+    if (host.subviews.lastObject != rail) [host bringSubviewToFront:rail];
+    CGRect frame = [host convertRect:target fromView:nil];
+    if (!CGRectEqualToRect(rail.frame, frame)) rail.frame = frame;
 }
 
-void BHTRotateGlassTabGlyph(UIView* item) {
-    static char rotatedKey;
-    UIView* glyph = BHTGlassTabGlyph(item);
-    if (!glyph) return;
-    if (NFBGlassTabRailActive(item)) {
-        glyph.transform = CGAffineTransformMakeRotation(-M_PI_2);
-        objc_setAssociatedObject(glyph, &rotatedKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    } else if (objc_getAssociatedObject(glyph, &rotatedKey)) {
-        glyph.transform = CGAffineTransformIdentity;
-        objc_setAssociatedObject(glyph, &rotatedKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    }
+void BHTScheduleGlassTabRailUpdate(UIView* view) {
+    Class barClass = NSClassFromString(@"_TtC11XNavigation10TabBarView");
+    UIView* bar = view;
+    while (bar && ![bar isKindOfClass:barClass])
+        bar = bar.superview;
+    if (!bar || objc_getAssociatedObject(bar, &BHTGlassTabRailScheduledKey)) return;
+    if (!BHTGlassTabIsRail(bar) && !NFBGlassTabRailActive(bar)) return;
+    objc_setAssociatedObject(bar, &BHTGlassTabRailScheduledKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    __weak UIView* weakBar = bar;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIView* strongBar = weakBar;
+        if (!strongBar) return;
+        objc_setAssociatedObject(strongBar, &BHTGlassTabRailScheduledKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        BHTUpdateGlassTabRail(strongBar);
+    });
 }
 
 void BHTApplyGlassTabAccent(UIView* item) {

@@ -36,9 +36,10 @@ BOOL BHTIsExploreSearchBackgroundView(UIView* view);
 void BHTApplyGlassTabLabels(UIView* bar);
 void BHTApplyGlassTabAccent(UIView* item);
 void BHTLayoutGlassTabItem(UIView* item);
-void BHTLayoutGlassTabRail(UIView* bar);
-void BHTRotateGlassTabGlyph(UIView* item);
 BOOL BHTGlassTabIsRail(UIView* bar);
+// Records X's own hidden request and returns what the bar should really be.
+BOOL BHTGlassTabHiddenRequest(UIView* bar, BOOL hidden);
+void BHTScheduleGlassTabRailUpdate(UIView* view);
 UIView* BHTPrepareLegacyTabLayout(T1TabView* tabView);
 void BHTFinishLegacyTabLayout(T1TabView* tabView, UIView* glyph);
 void BHTUpdateLegacyTabLabelColor(T1TabView* tabView, BOOL selected);

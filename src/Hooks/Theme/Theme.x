@@ -384,37 +384,18 @@ static BOOL updatingTabIconColor = NO;
 - (void)layoutSubviews {
     %orig;
     BHTApplyGlassTabLabels((UIView*)self);
-    BHTLayoutGlassTabRail((UIView*)self);
-}
-
-// While rotated onto the rail, X keeps seeing the bar's untransformed frame so
-// its own layout and inset math stay unchanged.
-- (CGRect)frame {
-    if (!BHTGlassTabIsRail((UIView*)self)) return %orig;
-    CGRect bounds = ((UIView*)self).bounds;
-    CGPoint center = ((UIView*)self).center;
-    return CGRectMake(center.x - bounds.size.width / 2.0, center.y - bounds.size.height / 2.0,
-                      bounds.size.width, bounds.size.height);
-}
-
-- (void)setFrame:(CGRect)frame {
-    if (!BHTGlassTabIsRail((UIView*)self)) {
-        %orig;
-        return;
-    }
-    ((UIView*)self).transform = CGAffineTransformIdentity;
-    %orig;
-    BHTLayoutGlassTabRail((UIView*)self);
-}
-
-- (void)setCenter:(CGPoint)center {
-    %orig;
-    if (BHTGlassTabIsRail((UIView*)self)) BHTLayoutGlassTabRail((UIView*)self);
+    BHTScheduleGlassTabRailUpdate((UIView*)self);
 }
 
 - (void)didMoveToWindow {
     %orig;
-    BHTLayoutGlassTabRail((UIView*)self);
+    BHTScheduleGlassTabRailUpdate((UIView*)self);
+}
+
+// On wide windows the native rail stands in for this bar, so keep it hidden
+// while remembering what X asked for (the rail follows that instead).
+- (void)setHidden:(BOOL)hidden {
+    %orig(BHTGlassTabHiddenRequest((UIView*)self, hidden));
 }
 
 %new
@@ -430,7 +411,7 @@ static BOOL updatingTabIconColor = NO;
     %orig;
     BHTApplyGlassTabAccent((UIView*)self);
     BHTLayoutGlassTabItem((UIView*)self);
-    BHTRotateGlassTabGlyph((UIView*)self);
+    BHTScheduleGlassTabRailUpdate((UIView*)self);
 }
 
 %new
