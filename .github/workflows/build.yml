@@ -131,6 +131,11 @@ jobs:
             grep '<string>' | awk -F'[><]' '{print $3}')
           echo "version=${X_VERSION}" >> "$GITHUB_OUTPUT"
           echo "$X_VERSION"
+          # The SDK X was built with decides which newer UIKit behaviours (e.g.
+          # the iPhone Duo side-strip tab bar) X's process gets.
+          X_EXEC=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' main/tmp/Payload/Twitter.app/Info.plist || echo Twitter)
+          vtool -show-build "main/tmp/Payload/Twitter.app/${X_EXEC}" | tee /dev/stderr |
+            awk '/sdk/ {print "::notice title=X build SDK::" $0}' || true
         env:
           IPA_URL: ${{ inputs.decrypted_ipa_url }}
 

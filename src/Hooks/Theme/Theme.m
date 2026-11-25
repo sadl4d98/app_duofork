@@ -1248,12 +1248,141 @@ static const CGFloat BHTGlassTabRailPadding = 8.0;
 
 @end
 
+// MARK: Native tab bar
+
+// A real UITabBarController laid over X, so iOS itself places the bar exactly as
+// in other iPhone Duo apps (side strip, or along the bottom on the unfolded screen
+// held upright). Its tabs are empty placeholders and everything but the bar
+// passes touches through to X; picking a tab taps X's own item.
+
+@interface BHTPassthroughView : UIView
+@property (nonatomic, weak) UITabBarController* controller;
+@end
+
+@implementation BHTPassthroughView
+- (UIView*)hitTest:(CGPoint)point withEvent:(UIEvent*)event {
+    UIView* hit = [super hitTest:point withEvent:event];
+    UIView* page = self.controller.selectedViewController.viewIfLoaded;
+    // Only the bar takes touches: not this view, the placeholder page, or the
+    // controller's own containers around it.
+    if (!hit || hit == self || (page && ([hit isDescendantOfView:page] || [page isDescendantOfView:hit]))) return nil;
+    return hit;
+}
+@end
+
+@interface BHTNativeTabHost : NSObject <UITabBarControllerDelegate>
+@property (nonatomic, weak) UIView* bar;
+@property (nonatomic, strong) UITabBarController* controller;
+@property (nonatomic, strong) BHTPassthroughView* container;
+@property (nonatomic, copy) NSArray<UIView*>* items;
+@end
+
+@implementation BHTNativeTabHost
+
+- (instancetype)initWithBar:(UIView*)bar {
+    self = [super init];
+    if (!self) return nil;
+    _bar = bar;
+    _controller = [UITabBarController new];
+    _controller.delegate = self;
+    _container = [BHTPassthroughView new];
+    _container.controller = _controller;
+    _container.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    return self;
+}
+
+// The top of the view controller chain that shows X's bar (the root, or
+// whatever X presents its main interface in).
+static UIViewController* BHTTopControllerForView(UIView* view) {
+    UIViewController* controller = nil;
+    for (UIResponder* responder = view.nextResponder; responder; responder = responder.nextResponder) {
+        if ([responder isKindOfClass:UIViewController.class]) controller = (UIViewController*)responder;
+    }
+    while (controller.parentViewController)
+        controller = controller.parentViewController;
+    return controller;
+}
+
+- (void)attach {
+    UIViewController* parent = BHTTopControllerForView(self.bar);
+    if (!parent.isViewLoaded) return;
+    UITabBarController* controller = self.controller;
+    if (controller.parentViewController != parent) {
+        [self detach];
+        [parent addChildViewController:controller];
+        self.container.frame = parent.view.bounds;
+        [parent.view addSubview:self.container];
+        controller.view.frame = self.container.bounds;
+        controller.view.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+        controller.view.backgroundColor = UIColor.clearColor;
+        [self.container addSubview:controller.view];
+        [controller didMoveToParentViewController:parent];
+    }
+    if (parent.view.subviews.lastObject != self.container) [parent.view bringSubviewToFront:self.container];
+}
+
+- (void)detach {
+    UITabBarController* controller = self.controller;
+    if (!controller.parentViewController) return;
+    [controller willMoveToParentViewController:nil];
+    [self.container removeFromSuperview];
+    [controller removeFromParentViewController];
+}
+
+- (void)reload {
+    UIView* bar = self.bar;
+    NSArray<UIView*>* items = BHTSortedGlassTabItems(bar);
+    UITabBarController* controller = self.controller;
+    if (controller.viewControllers.count != items.count) {
+        NSMutableArray* pages = [NSMutableArray new];
+        for (NSUInteger index = 0; index < items.count; index++) {
+            UIViewController* page = [UIViewController new];
+            page.view.backgroundColor = UIColor.clearColor;
+            [pages addObject:page];
+        }
+        controller.viewControllers = pages;
+    }
+    self.items = items;
+    for (NSUInteger index = 0; index < items.count; index++) {
+        UITabBarItem* item = controller.viewControllers[index].tabBarItem;
+        item.image = BHTGlassTabItemImage(items[index]);
+        item.title = BHTGlassTabItemTitle(items[index], bar);
+        NSString* badge = BHTGlassTabItemBadge(items[index]);
+        item.badgeValue = badge.length ? badge : nil;
+    }
+    controller.tabBar.tintColor = [BHTSettings boolForKey:@"tab_bar_theming"] ? CurrentAccentColor() : nil;
+    NSInteger selected = BHTGlassTabSelectedIndex(bar);
+    if (selected >= 0 && selected < (NSInteger)items.count && controller.selectedIndex != (NSUInteger)selected) {
+        controller.selectedIndex = selected;
+    }
+}
+
+- (BOOL)tabBarController:(UITabBarController*)controller shouldSelectViewController:(UIViewController*)page {
+    NSUInteger index = [controller.viewControllers indexOfObjectIdenticalTo:page];
+    UIView* bar = self.bar;
+    if (index == NSNotFound || index >= self.items.count || !bar) return NO;
+    if (!BHTForwardTapToGlassTab(self.items[index], bar)) {
+        BHTReportGlassTabForwardFailure(self.items[index], bar);
+        return NO;
+    }
+    __weak BHTNativeTabHost* weakSelf = self;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.4 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        [weakSelf reload];
+    });
+    return YES;
+}
+
+@end
+
 static char BHTGlassTabRailKey;
+static char BHTNativeTabHostKey;
 static char BHTGlassTabRequestedHiddenKey;
 static char BHTGlassTabRailScheduledKey;
 
+// Whether X's bar is currently replaced (by the native bar or the rail).
 BOOL BHTGlassTabIsRail(UIView* bar) {
-    return objc_getAssociatedObject(bar, &BHTGlassTabRailKey) != nil;
+    return objc_getAssociatedObject(bar, &BHTGlassTabRailKey) != nil ||
+           objc_getAssociatedObject(bar, &BHTNativeTabHostKey) != nil;
 }
 
 static BOOL BHTHidingGlassTabBar;
@@ -1263,18 +1392,49 @@ BOOL BHTGlassTabHiddenRequest(UIView* bar, BOOL hidden) {
         objc_setAssociatedObject(bar, &BHTGlassTabRequestedHiddenKey, @(hidden), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         BHTGlassTabRail* rail = objc_getAssociatedObject(bar, &BHTGlassTabRailKey);
         rail.hidden = hidden;
+        BHTNativeTabHost* host = objc_getAssociatedObject(bar, &BHTNativeTabHostKey);
+        host.container.hidden = hidden;
     }
     return hidden || BHTGlassTabIsRail(bar);
 }
 
+static void BHTHideReplacedGlassTabBar(UIView* bar) {
+    if (bar.hidden) return;
+    BHTHidingGlassTabBar = YES;
+    bar.hidden = YES;
+    BHTHidingGlassTabBar = NO;
+}
+
+static void BHTUpdateNativeTabBar(UIView* bar, BOOL active) {
+    BHTNativeTabHost* host = objc_getAssociatedObject(bar, &BHTNativeTabHostKey);
+    if (!active) {
+        if (host) {
+            [host detach];
+            objc_setAssociatedObject(bar, &BHTNativeTabHostKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            bar.hidden = [objc_getAssociatedObject(bar, &BHTGlassTabRequestedHiddenKey) boolValue];
+        }
+        return;
+    }
+    if (!host) {
+        host = [[BHTNativeTabHost alloc] initWithBar:bar];
+        objc_setAssociatedObject(bar, &BHTNativeTabHostKey, host, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        host.container.hidden = [objc_getAssociatedObject(bar, &BHTGlassTabRequestedHiddenKey) boolValue];
+    }
+    BHTHideReplacedGlassTabBar(bar);
+    [host attach];
+    [host reload];
+}
+
 void BHTUpdateGlassTabRail(UIView* bar) {
+    BOOL native = NFBNativeTabBarEnabled() && bar.window && bar.superview;
+    BHTUpdateNativeTabBar(bar, native);
     BHTGlassTabRail* rail = objc_getAssociatedObject(bar, &BHTGlassTabRailKey);
     UIWindow* window = bar.window;
-    if (!NFBGlassTabRailActive(bar) || !bar.superview) {
+    if (native || !NFBGlassTabRailActive(bar) || !bar.superview) {
         if (rail) {
             [rail removeFromSuperview];
             objc_setAssociatedObject(bar, &BHTGlassTabRailKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-            bar.hidden = [objc_getAssociatedObject(bar, &BHTGlassTabRequestedHiddenKey) boolValue];
+            if (!native) bar.hidden = [objc_getAssociatedObject(bar, &BHTGlassTabRequestedHiddenKey) boolValue];
         }
         return;
     }
@@ -1283,11 +1443,7 @@ void BHTUpdateGlassTabRail(UIView* bar) {
         objc_setAssociatedObject(bar, &BHTGlassTabRailKey, rail, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         rail.hidden = [objc_getAssociatedObject(bar, &BHTGlassTabRequestedHiddenKey) boolValue];
     }
-    if (!bar.hidden) {
-        BHTHidingGlassTabBar = YES;
-        bar.hidden = YES;
-        BHTHidingGlassTabBar = NO;
-    }
+    BHTHideReplacedGlassTabBar(bar);
     [rail reload];
 
     // Like native iPhone Duo apps: bottom-aligned in the side strip beside the
@@ -1315,7 +1471,7 @@ void BHTScheduleGlassTabRailUpdate(UIView* view) {
     while (bar && ![bar isKindOfClass:barClass])
         bar = bar.superview;
     if (!bar || objc_getAssociatedObject(bar, &BHTGlassTabRailScheduledKey)) return;
-    if (!BHTGlassTabIsRail(bar) && !NFBGlassTabRailActive(bar)) return;
+    if (!BHTGlassTabIsRail(bar) && !NFBGlassTabRailActive(bar) && !NFBNativeTabBarEnabled()) return;
     objc_setAssociatedObject(bar, &BHTGlassTabRailScheduledKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     __weak UIView* weakBar = bar;
     dispatch_async(dispatch_get_main_queue(), ^{

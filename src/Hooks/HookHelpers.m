@@ -167,8 +167,12 @@ BOOL NFBGlassTabRailActive(UIView* view) {
     return size.width > size.height || size.width < NFBGlassTabRailCompactWidth;
 }
 
+BOOL NFBNativeTabBarEnabled(void) {
+    return NFBLiquidGlassEnabled() && [BHTSettings boolForKey:@"native_tab_bar"];
+}
+
 BOOL NFBGlassTabRailNeedsInset(UIView* view) {
-    return NFBGlassTabRailActive(view) && view.window.safeAreaInsets.right < 56.0;
+    return !NFBNativeTabBarEnabled() && NFBGlassTabRailActive(view) && view.window.safeAreaInsets.right < 56.0;
 }
 
 BOOL boolIvar(id object, const char* name, BOOL fallback) {

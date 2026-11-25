@@ -22,6 +22,8 @@
 "SHOW_SCROLL_INDICATOR_TITLE" = "Always show the scroll bar";
 "IPAD_SPLIT_VIEW_TITLE" = "Enable iPad split view";
 "IPAD_SPLIT_VIEW_DETAIL" = "Allows you to use Twitter in split view on iPad (and the iPhone Duo). This allows you to have a tweet open on one side and your timeline on the other.";
+"NATIVE_TAB_BAR_TITLE" = "Use native iOS tab bar";
+"NATIVE_TAB_BAR_DETAIL" = "With Liquid Glass, replaces Twitter's tab bar with the system one, which iOS places like in other iPhone Duo apps. When off, a custom vertical rail is used instead.";
 "SPLIT_VIEW_LOADING_SPINNER_TITLE" = "Show split view tweets right away";
 "SPLIT_VIEW_LOADING_SPINNER_DETAIL" = "Shows a loading spinner in the tweet column while replies load. When off, the column stays blank until it opens at the first reply.";
 

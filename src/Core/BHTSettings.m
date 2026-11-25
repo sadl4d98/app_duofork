@@ -473,6 +473,9 @@ static NSDictionary<NSString*, NSDictionary*>* BHTSettingsPages(void) {
                       @"type": @"toggle"},
                     @{@"key": @"liquid_glass",
                       @"default": @NO,
+                      @"type": @"toggle"},
+                    @{@"key": @"native_tab_bar",
+                      @"default": @YES,
                       @"type": @"toggle"}
                 ]
             },

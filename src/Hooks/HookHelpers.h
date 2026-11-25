@@ -64,6 +64,8 @@ BOOL NFBGlassTabRailActive(UIView* view);
 // Whether content must make room for the rail: only when the window has no side
 // strip (beside the status bar) wide enough to hold it.
 BOOL NFBGlassTabRailNeedsInset(UIView* view);
+// A real UIKit tab bar laid over X instead of the replica rail (setting).
+BOOL NFBNativeTabBarEnabled(void);
 
 // Long press on the home navigation bar opens NeoFreeBird settings (Settings.x)
 void attachNeoFreeBirdSettingsGesture(UIViewController* home);

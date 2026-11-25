@@ -16,6 +16,12 @@
     or portrait narrower than `NFBGlassTabRailCompactWidth`), matching how Duo apps behave. X's bar stays in the hierarchy but hidden, and
     each rail button forwards its tap to X's own tab item (UIControl actions, else the tap
     recognizer's targets). The split columns leave `NFBGlassTabRailInset` (`src/Hooks/HookHelpers.h`) for it.
+  - Native option (`native_tab_bar` setting, on by default): `BHTNativeTabHost` lays a real
+    `UITabBarController` over X (as a child of the top controller, in a pass-through view). Its tabs
+    are empty pages mirroring X's items, and selecting one forwards the tap to X's own item. iOS
+    places this bar itself, so it gets the true Duo layout only if X's binary is built with the
+    iOS 27.1 SDK. The `Build Tweak` workflow prints X's build SDK as a notice to check this.
+    `sidebar.preferredPlacement` stays on automatic, because `.sidebar` gives the iPad-style list.
   - Rotating X's bar instead was tried and failed: X minimizes and animates the bar with its own
     transforms.
   - A native rail would mean hosting a real `UITabBarController`/`UITabBar` that mirrors X's tabs and
