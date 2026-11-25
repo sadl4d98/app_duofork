@@ -55,7 +55,8 @@
   layout X's "+" isn't a UIKit button. FLEX (X 12.46) shows it's drawn by SwiftUI in a full-window
   `_UIHostingView<XDesignSystem…ControlMenuHostingView>` under
   `GrokControlMenuHostViewController`, so it can't be tapped for the user. The tweak hides that
-  overlay (found by class name containing `ControlMenuHostingView`) and opens the composer through
+  overlay (found by class name containing `ControlMenuHostingView`, searched in all of the scene's
+  windows, because X shows it in its own window) and opens the composer through
   `twitter://post`. Older `TFNFloatingActionButton`s, where present, are still hidden and tapped instead.
 - On iOS 27.1, content that reaches the side strip gets X's top-bar buttons moved into the strip, and
   X's logo (a title view) disappears. Ending the content at the strip keeps the bar and logo normal.

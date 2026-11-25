@@ -1490,14 +1490,20 @@ static UIView* BHTFindControlMenu(UIView* view) {
     return nil;
 }
 
+// X shows the overlay in its own window, so search all of the scene's windows.
 static UIView* BHTControlMenu(UIWindow* window) {
     static __weak UIView* cached;
     static CFAbsoluteTime lastSearch;
     UIView* menu = cached;
-    if (menu.window == window && window) return menu;
+    if (menu.window) return menu;
     if (!window || CFAbsoluteTimeGetCurrent() - lastSearch < 1.0) return nil;
     lastSearch = CFAbsoluteTimeGetCurrent();
-    cached = menu = BHTFindControlMenu(window);
+    NSArray<UIWindow*>* windows = window.windowScene.windows ?: @[window];
+    for (UIWindow* candidate in windows) {
+        menu = BHTFindControlMenu(candidate);
+        if (menu) break;
+    }
+    cached = menu;
     return menu;
 }
 
