@@ -1477,6 +1477,44 @@ static UIView* BHTCurrentFloatingButton(UIWindow* window) {
     return best;
 }
 
+// The Liquid Glass "+" is drawn by SwiftUI inside a full-window overlay
+// (XDesignSystem's ControlMenuHostingView, under GrokControlMenuHostViewController),
+// so it has no UIKit button to tap. Found by class name, cached, and looked
+// up again at most once a second while missing.
+static UIView* BHTFindControlMenu(UIView* view) {
+    if ([NSStringFromClass(view.class) containsString:@"ControlMenuHostingView"]) return view;
+    for (UIView* subview in view.subviews) {
+        UIView* found = BHTFindControlMenu(subview);
+        if (found) return found;
+    }
+    return nil;
+}
+
+static UIView* BHTControlMenu(UIWindow* window) {
+    static __weak UIView* cached;
+    static CFAbsoluteTime lastSearch;
+    UIView* menu = cached;
+    if (menu.window == window && window) return menu;
+    if (!window || CFAbsoluteTimeGetCurrent() - lastSearch < 1.0) return nil;
+    lastSearch = CFAbsoluteTimeGetCurrent();
+    cached = menu = BHTFindControlMenu(window);
+    return menu;
+}
+
+static char BHTControlMenuHiddenKey;
+
+// Hides X's "+" overlay while the rail's compose button stands in for it.
+static void BHTSetControlMenuReplaced(UIView* menu, BOOL replaced) {
+    BOOL hiddenByUs = objc_getAssociatedObject(menu, &BHTControlMenuHiddenKey) != nil;
+    if (replaced && !menu.hidden) {
+        menu.hidden = YES;
+        objc_setAssociatedObject(menu, &BHTControlMenuHiddenKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    } else if (!replaced && hiddenByUs) {
+        menu.hidden = NO;
+        objc_setAssociatedObject(menu, &BHTControlMenuHiddenKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+}
+
 static UIImage* BHTFirstImage(UIView* view) {
     if ([view isKindOfClass:UIImageView.class] && ((UIImageView*)view).image) return ((UIImageView*)view).image;
     for (UIView* subview in view.subviews) {
@@ -1523,7 +1561,12 @@ static UIImage* BHTFirstImage(UIView* view) {
 
 - (void)didTapCompose {
     UIView* button = BHTCurrentFloatingButton(self.bar.window);
-    if (button) BHTForwardTap(button, button);
+    if (button) {
+        BHTForwardTap(button, button);
+        return;
+    }
+    // X's own link for "new post", as used from outside the app.
+    [UIApplication.sharedApplication openURL:[NSURL URLWithString:@"twitter://post"] options:@{} completionHandler:nil];
 }
 
 // Grows `frame` (in `container` coordinates) by the visible views under `view`
@@ -1567,17 +1610,19 @@ static void BHTAddStripViews(UIView* view, UIView* page, UIView* container, CGFl
         for (UIView* button in BHTFloatingButtons().allObjects)
             BHTApplyFloatingButtonHidden(button);
     }
+    UIView* menu = BHTControlMenu(window);
+    BHTSetControlMenuReplaced(menu, rail);
     UIView* floating = rail ? BHTCurrentFloatingButton(window) : nil;
-    self.compose.hidden = !floating;
-    if (!floating) return;
+    self.compose.hidden = !rail;
+    if (!rail) return;
     if (self.compose.superview != container) [container addSubview:self.compose];
     if (container.subviews.lastObject != self.compose) [container bringSubviewToFront:self.compose];
-    UIImage* image = BHTFirstImage(floating) ?: [UIImage systemImageNamed:@"plus"];
+    UIImage* image = (floating ? BHTFirstImage(floating) : nil) ?: [UIImage systemImageNamed:@"plus"];
     if ([self.composeButton imageForState:UIControlStateNormal] != image) {
         [self.composeButton setImage:[image imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate]
                             forState:UIControlStateNormal];
     }
-    self.composeButton.accessibilityLabel = floating.accessibilityLabel;
+    self.composeButton.accessibilityLabel = floating.accessibilityLabel ?: @"Post";
     CGFloat size = MIN(MIN(CGRectGetWidth(bar), strip - 8.0), 56.0);
     CGRect frame = CGRectMake(CGRectGetMidX(bar) - size / 2.0, CGRectGetMinY(bar) - 12.0 - size, size, size);
     if (!CGRectEqualToRect(self.compose.frame, frame)) {
@@ -1621,6 +1666,7 @@ static UIViewController* BHTTopControllerForView(UIView* view) {
 - (void)detach {
     if (BHTActiveNativeHost == self) BHTActiveNativeHost = nil;
     self.railLayout = NO;
+    BHTSetControlMenuReplaced(BHTControlMenu(self.bar.window), NO);
     for (UIView* button in BHTFloatingButtons().allObjects)
         BHTApplyFloatingButtonHidden(button);
     UITabBarController* controller = self.controller;
