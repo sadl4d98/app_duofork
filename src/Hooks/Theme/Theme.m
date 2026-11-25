@@ -1505,6 +1505,7 @@ static char BHTControlMenuHiddenKey;
 
 // Hides X's "+" overlay while the rail's compose button stands in for it.
 static void BHTSetControlMenuReplaced(UIView* menu, BOOL replaced) {
+    if (!menu) return; // not found (yet); objc_setAssociatedObject crashes on nil
     BOOL hiddenByUs = objc_getAssociatedObject(menu, &BHTControlMenuHiddenKey) != nil;
     if (replaced && !menu.hidden) {
         menu.hidden = YES;

@@ -244,6 +244,7 @@ static char BHTScrollToRepliesKey;
 static char BHTLoadingCoverKey;
 
 void BHTRevealColumn(UIView* column) {
+    if (!column) return; // e.g. a timer outliving the column
     UIView* cover = objc_getAssociatedObject(column, &BHTLoadingCoverKey);
     objc_setAssociatedObject(column, &BHTLoadingCoverKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     if (column.alpha >= 1.0 && !cover) return;
