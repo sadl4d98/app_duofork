@@ -389,6 +389,7 @@ static BOOL updatingTabIconColor = NO;
 
 - (void)didMoveToWindow {
     %orig;
+    BHTHideGlassTabBarIfReplaced((UIView*)self);
     BHTScheduleGlassTabRailUpdate((UIView*)self);
 }
 
@@ -407,6 +408,14 @@ static BOOL updatingTabIconColor = NO;
 
 // X's Liquid Glass compose "+" is an XDSButton ("Compose post"); the rail's
 // glass button replaces it while the native bar is vertical.
+%hook UIViewController
+
+- (void)setAdditionalSafeAreaInsets:(UIEdgeInsets)insets {
+    %orig(BHTTabChildSafeAreaInsets((UIViewController*)self, insets));
+}
+
+%end
+
 %hook XDSButton
 
 - (void)didMoveToWindow {

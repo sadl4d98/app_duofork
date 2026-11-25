@@ -59,6 +59,14 @@
   - Dead end: FLEX "select" on the "+" picks whatever full-screen layer is on top, first a
     `ControlMenuHostingView` (a Grok overlay in its own window), later the tweak's own tab overlay.
     Search by class or label in FLEX's views list instead.
+- X's hidden bar: X creates fresh bar instances (e.g. entering the Grok tab), so the bar is hidden
+  synchronously on `didMoveToWindow` and in the `setHidden:` hook (`BHTGlassTabReplacedNow`), not only
+  on the async rail update. Otherwise it flashes for a frame or two.
+- Bottom space: X reserves a bottom inset on its tab screens for its floating bar, which made Grok's
+  input stop short of the bottom. While the bar is in the side strip, `setAdditionalSafeAreaInsets:` on
+  `XNavigation.TabBarController` children gets its bottom zeroed. X's value is stored and reapplied
+  when the layout changes. This assumes X uses additionalSafeAreaInsets; unconfirmed until tested on
+  device.
 - On iOS 27.1, content that reaches the side strip gets X's top-bar buttons moved into the strip, and
   X's logo (a title view) disappears. Ending the content at the strip keeps the bar and logo normal.
 

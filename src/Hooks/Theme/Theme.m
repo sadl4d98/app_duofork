@@ -1611,6 +1611,7 @@ static void BHTAddStripViews(UIView* view, UIView* page, UIView* container, CGFl
         self.railLayout = rail;
         for (UIView* button in BHTFloatingButtons().allObjects)
             BHTApplyFloatingButtonHidden(button);
+        BHTReapplyTabChildSafeAreaInsets(self.bar);
     }
     UIView* floating = rail ? BHTCurrentFloatingButton(window) : nil;
     self.compose.hidden = !rail;
@@ -1666,6 +1667,7 @@ static UIViewController* BHTTopControllerForView(UIView* view) {
 - (void)detach {
     if (BHTActiveNativeHost == self) BHTActiveNativeHost = nil;
     self.railLayout = NO;
+    BHTReapplyTabChildSafeAreaInsets(self.bar);
     for (UIView* button in BHTFloatingButtons().allObjects)
         BHTApplyFloatingButtonHidden(button);
     UITabBarController* controller = self.controller;
@@ -1734,6 +1736,8 @@ BOOL BHTGlassTabIsRail(UIView* bar) {
 
 static BOOL BHTHidingGlassTabBar;
 
+static void BHTHideReplacedGlassTabBar(UIView* bar);
+
 BOOL BHTGlassTabHiddenRequest(UIView* bar, BOOL hidden) {
     if (BHTShowingForTap) return hidden;
     if (!BHTHidingGlassTabBar) {
@@ -1743,7 +1747,61 @@ BOOL BHTGlassTabHiddenRequest(UIView* bar, BOOL hidden) {
         BHTNativeTabHost* host = objc_getAssociatedObject(bar, &BHTNativeTabHostKey);
         host.container.hidden = hidden;
     }
-    return hidden || BHTGlassTabIsRail(bar);
+    return hidden || BHTGlassTabIsRail(bar) || BHTGlassTabReplacedNow(bar);
+}
+
+// Whether X's bar is being replaced right now, before the (asynchronous) rail
+// or native bar update has caught up. A fresh bar X creates (e.g. on the Grok
+// tab) would otherwise show for a frame or two.
+BOOL BHTGlassTabReplacedNow(UIView* bar) {
+    return bar.window && (NFBNativeTabBarEnabled() || NFBGlassTabRailActive(bar));
+}
+
+void BHTHideGlassTabBarIfReplaced(UIView* bar) {
+    if (BHTGlassTabReplacedNow(bar)) BHTHideReplacedGlassTabBar(bar);
+}
+
+// MARK: Bottom space for X's bar
+
+// X's tab container gives each tab's screen a bottom safe-area inset for its
+// floating bar. Timelines scroll under it, but screens pinned to it (Grok's
+// input) stop short of the bottom. While the bar lives in the side strip that
+// space is empty, so drop it; X's own value is kept to restore later.
+// ponytail: assumes X uses additionalSafeAreaInsets on its tab children.
+static char BHTRequestedSafeAreaKey;
+
+static UIViewController* BHTXTabController(UIViewController* controller) {
+    Class tabClass = NSClassFromString(@"_TtC11XNavigation16TabBarController");
+    for (UIViewController* parent = controller; parent && tabClass; parent = parent.parentViewController) {
+        if ([parent isKindOfClass:tabClass]) return parent;
+    }
+    return nil;
+}
+
+static BOOL BHTTabBarInSideStrip(UIViewController* controller) {
+    if (NFBNativeTabBarEnabled()) return BHTActiveNativeHost.railLayout;
+    UIView* view = controller.viewIfLoaded ?: controller.parentViewController.viewIfLoaded;
+    return NFBGlassTabRailActive(view) && !NFBGlassTabRailNeedsInset(view);
+}
+
+UIEdgeInsets BHTTabChildSafeAreaInsets(UIViewController* controller, UIEdgeInsets insets) {
+    UIViewController* parent = controller.parentViewController;
+    if (!parent || BHTXTabController(parent) != parent) return insets;
+    objc_setAssociatedObject(controller, &BHTRequestedSafeAreaKey, [NSValue valueWithUIEdgeInsets:insets],
+                             OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    if (BHTTabBarInSideStrip(controller)) insets.bottom = 0.0;
+    return insets;
+}
+
+void BHTReapplyTabChildSafeAreaInsets(UIView* bar) {
+    UIViewController* owner = nil;
+    for (UIResponder* responder = bar.nextResponder; responder && !owner; responder = responder.nextResponder) {
+        if ([responder isKindOfClass:UIViewController.class]) owner = (UIViewController*)responder;
+    }
+    for (UIViewController* child in BHTXTabController(owner).childViewControllers) {
+        NSValue* requested = objc_getAssociatedObject(child, &BHTRequestedSafeAreaKey);
+        if (requested) child.additionalSafeAreaInsets = requested.UIEdgeInsetsValue;
+    }
 }
 
 static void BHTHideReplacedGlassTabBar(UIView* bar) {
@@ -1783,12 +1841,14 @@ void BHTUpdateGlassTabRail(UIView* bar) {
             [rail removeFromSuperview];
             objc_setAssociatedObject(bar, &BHTGlassTabRailKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
             if (!native) bar.hidden = [objc_getAssociatedObject(bar, &BHTGlassTabRequestedHiddenKey) boolValue];
+            BHTReapplyTabChildSafeAreaInsets(bar);
         }
         return;
     }
     if (!rail) {
         rail = [[BHTGlassTabRail alloc] initWithBar:bar];
         objc_setAssociatedObject(bar, &BHTGlassTabRailKey, rail, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        BHTReapplyTabChildSafeAreaInsets(bar);
         rail.hidden = [objc_getAssociatedObject(bar, &BHTGlassTabRequestedHiddenKey) boolValue];
     }
     BHTHideReplacedGlassTabBar(bar);

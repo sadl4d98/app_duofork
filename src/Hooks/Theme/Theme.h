@@ -39,6 +39,11 @@ void BHTLayoutGlassTabItem(UIView* item);
 BOOL BHTGlassTabIsRail(UIView* bar);
 // Records X's own hidden request and returns what the bar should really be.
 BOOL BHTGlassTabHiddenRequest(UIView* bar, BOOL hidden);
+BOOL BHTGlassTabReplacedNow(UIView* bar);
+void BHTHideGlassTabBarIfReplaced(UIView* bar);
+// Drops X's bottom inset for its (hidden) bar while the bar sits in the side strip.
+UIEdgeInsets BHTTabChildSafeAreaInsets(UIViewController* controller, UIEdgeInsets insets);
+void BHTReapplyTabChildSafeAreaInsets(UIView* bar);
 void BHTScheduleGlassTabRailUpdate(UIView* view);
 // X's floating compose button, replaced by a glass button on the native rail.
 BOOL BHTFloatingButtonHiddenRequest(UIView* button, BOOL hidden);
