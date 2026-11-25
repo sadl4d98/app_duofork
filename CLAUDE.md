@@ -20,7 +20,8 @@
     `UITabBarController` over X (as a child of the top controller, in a pass-through view). Its tabs
     are empty pages mirroring X's items, and selecting one forwards the tap to X's own item. iOS
     places this bar itself, so it gets the true Duo layout only if X's binary is built with the
-    iOS 27.1 SDK. The `Build Tweak` workflow prints X's build SDK as a notice to check this.
+    iOS 27.1 SDK. The `Build Tweak` workflow prints X's build SDK as a notice to check this. X 12.46 is built with the
+    iOS 27.1 SDK (minimum iOS 15.0), checked 25 Nov 2026.
     `sidebar.preferredPlacement` stays on automatic, because `.sidebar` gives the iPad-style list.
   - Rotating X's bar instead was tried and failed: X minimizes and animates the bar with its own
     transforms.
