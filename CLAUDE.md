@@ -41,7 +41,8 @@
   runtime classes or use the view selector on the tab bar.
 
 - Forwarding taps to X: X's handlers hit-test the bar, and hidden views can't be hit, so the
-  replaced bar is briefly shown (`BHTShowingForTap`) while a tap is delivered. On-device diagnostics
+  replaced bar is briefly shown (`BHTShowingForTap`) while a tap is delivered, at alpha 0.02. That's still
+  hit-testable but invisible, because X's tab-switch animation can draw a frame mid-tap and flashed the bar. On-device diagnostics
   (X 12.46) showed how `XNavigation.TabBarView` selects tabs: a `UILongPressGestureRecognizer` with
   action `handleTracking:` (the drag-between-tabs gesture). It also has a `UITapGestureRecognizer`
   with action `handleSecondaryClick:`, the context menu that opened the account switcher on Home. The

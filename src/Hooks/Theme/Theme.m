@@ -1140,7 +1140,11 @@ static BOOL BHTIsSingleTap(UIGestureRecognizer* recognizer) {
 // Returns how it was delivered, or nil if nothing took it.
 static NSString* BHTForwardTap(UIView* target, UIView* boundary) {
     BOOL hidden = boundary.hidden;
+    CGFloat alpha = boundary.alpha;
     BHTShowingForTap = YES;
+    // Hit-testable (alpha above 0.01) but invisible: X's tab switch animation can
+    // draw a frame mid-tap, which flashed X's bar at full opacity.
+    if (hidden) boundary.alpha = 0.02;
     boundary.hidden = NO;
     NSString* how = nil;
     CGPoint point = [target convertPoint:CGPointMake(CGRectGetMidX(target.bounds), CGRectGetMidY(target.bounds))
@@ -1167,6 +1171,7 @@ static NSString* BHTForwardTap(UIView* target, UIView* boundary) {
         if ([view accessibilityActivate]) how = [NSString stringWithFormat:@"accessibility %@", NSStringFromClass(view.class)];
     }
     boundary.hidden = hidden;
+    if (hidden) boundary.alpha = alpha;
     BHTShowingForTap = NO;
     return how;
 }
