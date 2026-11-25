@@ -51,13 +51,14 @@
 - The compose button decides "vertical" with the rail's rule (`NFBGlassTabRailActive` plus a side
   strip). It finds the system bar by looking for the tab controller's views that sit inside the strip,
   because `tabBar` isn't what the Duo strip layout draws.
-- While the native bar is vertical, a tinted glass compose button sits above it. In the Liquid Glass
-  layout X's "+" isn't a UIKit button. FLEX (X 12.46) shows it's drawn by SwiftUI in a full-window
-  `_UIHostingView<XDesignSystem…ControlMenuHostingView>` under
-  `GrokControlMenuHostViewController`, so it can't be tapped for the user. The tweak hides that
-  overlay (found by class name containing `ControlMenuHostingView`, searched in all of the scene's
-  windows, because X shows it in its own window) and opens the composer through
-  `twitter://post`. Older `TFNFloatingActionButton`s, where present, are still hidden and tapped instead.
+- While the native bar is vertical, a tinted glass compose button sits above it and replaces X's "+".
+  FLEX search on X 12.46: the Liquid Glass "+" is an `XDSButton` (a UIControl, 48×48) with
+  accessibility label "Compose post". It's registered by its label, then hidden together with its
+  small floating wrapper, and tapped with control actions. With no compose button on screen, the rail
+  button opens `twitter://post`. Older `TFNFloatingActionButton`s are handled the same way.
+  - Dead end: FLEX "select" on the "+" picks whatever full-screen layer is on top, first a
+    `ControlMenuHostingView` (a Grok overlay in its own window), later the tweak's own tab overlay.
+    Search by class or label in FLEX's views list instead.
 - On iOS 27.1, content that reaches the side strip gets X's top-bar buttons moved into the strip, and
   X's logo (a title view) disappears. Ending the content at the strip keeps the bar and logo normal.
 

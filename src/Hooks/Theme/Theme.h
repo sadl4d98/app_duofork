@@ -43,6 +43,8 @@ void BHTScheduleGlassTabRailUpdate(UIView* view);
 // X's floating compose button, replaced by a glass button on the native rail.
 BOOL BHTFloatingButtonHiddenRequest(UIView* button, BOOL hidden);
 void BHTFloatingButtonDidMoveToWindow(UIView* button);
+BOOL BHTIsComposeButton(UIView* button);
+void BHTXDSButtonChanged(UIView* button);
 UIView* BHTPrepareLegacyTabLayout(T1TabView* tabView);
 void BHTFinishLegacyTabLayout(T1TabView* tabView, UIView* glyph);
 void BHTUpdateLegacyTabLabelColor(T1TabView* tabView, BOOL selected);

@@ -1443,9 +1443,47 @@ BOOL BHTFloatingButtonHiddenRequest(UIView* button, BOOL hidden) {
     return hidden || BHTFloatingButtonReplaced(button);
 }
 
+static char BHTFloatingContainerHiddenKey;
+
+// The button's floating wrapper (e.g. its glass circle): the largest ancestor
+// that is still button-sized.
+static UIView* BHTFloatingContainer(UIView* button) {
+    UIView* view = button;
+    while (view.superview && CGRectGetWidth(view.superview.bounds) <= 120.0 &&
+           CGRectGetHeight(view.superview.bounds) <= 120.0)
+        view = view.superview;
+    return view;
+}
+
 static void BHTApplyFloatingButtonHidden(UIView* button) {
     // Goes through the setHidden: hook, which adds the replacement on top.
     button.hidden = [objc_getAssociatedObject(button, &BHTFloatingRequestedHiddenKey) boolValue];
+    UIView* container = BHTFloatingContainer(button);
+    if (container == button) return;
+    BOOL hiddenByUs = objc_getAssociatedObject(container, &BHTFloatingContainerHiddenKey) != nil;
+    if (BHTFloatingButtonReplaced(button) && !container.hidden) {
+        container.hidden = YES;
+        objc_setAssociatedObject(container, &BHTFloatingContainerHiddenKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    } else if (!BHTFloatingButtonReplaced(button) && hiddenByUs) {
+        container.hidden = NO;
+        objc_setAssociatedObject(container, &BHTFloatingContainerHiddenKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+}
+
+static char BHTComposeButtonKey;
+
+BOOL BHTIsComposeButton(UIView* button) {
+    return objc_getAssociatedObject(button, &BHTComposeButtonKey) != nil;
+}
+
+// X's Liquid Glass "+" is an XDSButton labelled "Compose post" (found with FLEX
+// on X 12.46). ponytail: matched by its English label; other languages keep X's.
+void BHTXDSButtonChanged(UIView* button) {
+    if (!BHTIsComposeButton(button)) {
+        if (![button.accessibilityLabel isEqualToString:@"Compose post"]) return;
+        objc_setAssociatedObject(button, &BHTComposeButtonKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+    BHTFloatingButtonDidMoveToWindow(button);
 }
 
 void BHTFloatingButtonDidMoveToWindow(UIView* button) {
@@ -1466,8 +1504,10 @@ static UIView* BHTCurrentFloatingButton(UIWindow* window) {
             continue;
         }
         BOOL visible = YES;
-        for (UIView* view = button.superview; view && visible; view = view.superview)
-            visible = !view.hidden && view.alpha > 0.01;
+        for (UIView* view = button.superview; view && visible; view = view.superview) {
+            BOOL ourHide = objc_getAssociatedObject(view, &BHTFloatingContainerHiddenKey) != nil;
+            visible = (!view.hidden || ourHide) && view.alpha > 0.01;
+        }
         NSUInteger order = [objc_getAssociatedObject(button, &BHTFloatingOrderKey) unsignedIntegerValue];
         if (visible && order >= bestOrder) {
             best = button;
@@ -1475,51 +1515,6 @@ static UIView* BHTCurrentFloatingButton(UIWindow* window) {
         }
     }
     return best;
-}
-
-// The Liquid Glass "+" is drawn by SwiftUI inside a full-window overlay
-// (XDesignSystem's ControlMenuHostingView, under GrokControlMenuHostViewController),
-// so it has no UIKit button to tap. Found by class name, cached, and looked
-// up again at most once a second while missing.
-static UIView* BHTFindControlMenu(UIView* view) {
-    if ([NSStringFromClass(view.class) containsString:@"ControlMenuHostingView"]) return view;
-    for (UIView* subview in view.subviews) {
-        UIView* found = BHTFindControlMenu(subview);
-        if (found) return found;
-    }
-    return nil;
-}
-
-// X shows the overlay in its own window, so search all of the scene's windows.
-static UIView* BHTControlMenu(UIWindow* window) {
-    static __weak UIView* cached;
-    static CFAbsoluteTime lastSearch;
-    UIView* menu = cached;
-    if (menu.window) return menu;
-    if (!window || CFAbsoluteTimeGetCurrent() - lastSearch < 1.0) return nil;
-    lastSearch = CFAbsoluteTimeGetCurrent();
-    NSArray<UIWindow*>* windows = window.windowScene.windows ?: @[window];
-    for (UIWindow* candidate in windows) {
-        menu = BHTFindControlMenu(candidate);
-        if (menu) break;
-    }
-    cached = menu;
-    return menu;
-}
-
-static char BHTControlMenuHiddenKey;
-
-// Hides X's "+" overlay while the rail's compose button stands in for it.
-static void BHTSetControlMenuReplaced(UIView* menu, BOOL replaced) {
-    if (!menu) return; // not found (yet); objc_setAssociatedObject crashes on nil
-    BOOL hiddenByUs = objc_getAssociatedObject(menu, &BHTControlMenuHiddenKey) != nil;
-    if (replaced && !menu.hidden) {
-        menu.hidden = YES;
-        objc_setAssociatedObject(menu, &BHTControlMenuHiddenKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    } else if (!replaced && hiddenByUs) {
-        menu.hidden = NO;
-        objc_setAssociatedObject(menu, &BHTControlMenuHiddenKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    }
 }
 
 static UIImage* BHTFirstImage(UIView* view) {
@@ -1569,7 +1564,7 @@ static UIImage* BHTFirstImage(UIView* view) {
 - (void)didTapCompose {
     UIView* button = BHTCurrentFloatingButton(self.bar.window);
     if (button) {
-        BHTForwardTap(button, button);
+        BHTForwardTap(button, BHTFloatingContainer(button));
         return;
     }
     // X's own link for "new post", as used from outside the app.
@@ -1617,8 +1612,6 @@ static void BHTAddStripViews(UIView* view, UIView* page, UIView* container, CGFl
         for (UIView* button in BHTFloatingButtons().allObjects)
             BHTApplyFloatingButtonHidden(button);
     }
-    UIView* menu = BHTControlMenu(window);
-    BHTSetControlMenuReplaced(menu, rail);
     UIView* floating = rail ? BHTCurrentFloatingButton(window) : nil;
     self.compose.hidden = !rail;
     if (!rail) return;
@@ -1673,7 +1666,6 @@ static UIViewController* BHTTopControllerForView(UIView* view) {
 - (void)detach {
     if (BHTActiveNativeHost == self) BHTActiveNativeHost = nil;
     self.railLayout = NO;
-    BHTSetControlMenuReplaced(BHTControlMenu(self.bar.window), NO);
     for (UIView* button in BHTFloatingButtons().allObjects)
         BHTApplyFloatingButtonHidden(button);
     UITabBarController* controller = self.controller;

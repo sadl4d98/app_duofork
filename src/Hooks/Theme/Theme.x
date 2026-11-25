@@ -405,6 +405,26 @@ static BOOL updatingTabIconColor = NO;
 
 %end
 
+// X's Liquid Glass compose "+" is an XDSButton ("Compose post"); the rail's
+// glass button replaces it while the native bar is vertical.
+%hook XDSButton
+
+- (void)didMoveToWindow {
+    %orig;
+    BHTXDSButtonChanged((UIView*)self);
+}
+
+- (void)layoutSubviews {
+    %orig;
+    if (!BHTIsComposeButton((UIView*)self)) BHTXDSButtonChanged((UIView*)self);
+}
+
+- (void)setHidden:(BOOL)hidden {
+    %orig(BHTIsComposeButton((UIView*)self) ? BHTFloatingButtonHiddenRequest((UIView*)self, hidden) : hidden);
+}
+
+%end
+
 %hook TFNFloatingActionButton
 
 - (void)didMoveToWindow {
