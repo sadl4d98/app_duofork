@@ -21,6 +21,15 @@
   - A native rail would mean hosting a real `UITabBarController`/`UITabBar` that mirrors X's tabs and
     forwards tab selection to X's controller. That only works once X's binary is built with the
     iOS 27.1+ SDK.
+- Apple's iPhone Duo guidance (Tech Talks "Design for iPhone Duo" / "Prepare your app for iPhone Duo"):
+  bars move into a vertical strip on the side, beside the status bar. A tab bar sits at the bottom of
+  that strip (the user's Photos screenshots show this). Only the unfolded screen in portrait keeps bars
+  at the top and bottom. UIKit opts in through the sidebar's preferred placement; iOS 27.1 adds
+  `UIViewReservedRegion` for custom UI. The rail follows this: it is bottom-aligned in the strip
+  (`window.safeAreaInsets.right`), and content is only inset (`NFBGlassTabRailNeedsInset`) when there
+  is no strip.
+- With the bar hidden on posts, X draws its own floating glass "Back" button. It's hidden while a post
+  is showing (matched by accessibility label) and restored when leaving posts.
 - To inspect class names on device: turn on the `flex_twitter` setting (bundled FLEX), then search
   runtime classes or use the view selector on the tab bar.
 
@@ -30,7 +39,8 @@
   user found more columns disorienting.
 - Back is a right swipe on the right column, with no close button. Posts never show the "Post" bar
   when Liquid Glass is on.
-- The right column hides the post until it sits at the first reply. The `split_view_loading_spinner`
+- The right column opens with the reply sort row ("Relevant · View quotes") at the top, else the first
+  reply. It hides the post until it's in place. The `split_view_loading_spinner`
   setting shows the column straight away with a spinner over it instead.
 
 ## Builds

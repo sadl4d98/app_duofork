@@ -30,7 +30,7 @@
 
 // Width the columns may use; the vertical glass tab rail owns the rest.
 - (CGFloat)columnsWidthForWidth:(CGFloat)width {
-    return MAX(0.0, width - (NFBGlassTabRailActive(self.viewIfLoaded) ? NFBGlassTabRailInset : 0.0));
+    return MAX(0.0, width - (NFBGlassTabRailNeedsInset(self.viewIfLoaded) ? NFBGlassTabRailInset : 0.0));
 }
 
 - (void)viewDidLoad {
@@ -704,6 +704,11 @@
 - (void)viewWillDisappear:(BOOL)animated {
     %orig;
     BHTConversationWillDisappear((UIViewController*)self, animated);
+}
+
+- (void)viewDidLayoutSubviews {
+    %orig;
+    BHTConversationDidLayout((UIViewController*)self);
 }
 
 %end

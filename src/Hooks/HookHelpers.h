@@ -61,6 +61,9 @@ static const CGFloat NFBGlassTabRailInset = 80.0; // ponytail: guessed width, tu
 // between a phone-width outer screen and the unfolded screen; tune on device.
 static const CGFloat NFBGlassTabRailCompactWidth = 560.0;
 BOOL NFBGlassTabRailActive(UIView* view);
+// Whether content must make room for the rail: only when the window has no side
+// strip (beside the status bar) wide enough to hold it.
+BOOL NFBGlassTabRailNeedsInset(UIView* view);
 
 // Long press on the home navigation bar opens NeoFreeBird settings (Settings.x)
 void attachNeoFreeBirdSettingsGesture(UIViewController* home);

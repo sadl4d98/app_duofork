@@ -21,3 +21,4 @@ BOOL BHTIsBackSwipeStart(UIPanGestureRecognizer* pan);
 BOOL BHTBackSwipeBlocksScrolling(UIGestureRecognizer* gesture, UIGestureRecognizer* other);
 void BHTConversationWillAppear(UIViewController* conversation, BOOL animated);
 void BHTConversationWillDisappear(UIViewController* conversation, BOOL animated);
+void BHTConversationDidLayout(UIViewController* conversation);

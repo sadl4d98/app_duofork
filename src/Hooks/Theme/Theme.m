@@ -1290,10 +1290,15 @@ void BHTUpdateGlassTabRail(UIView* bar) {
     }
     [rail reload];
 
+    // Like native iPhone Duo apps: bottom-aligned in the side strip beside the
+    // status bar. Without room there, it sits in the inset the split leaves for it.
     CGSize size = [rail railSize];
-    CGRect target = CGRectMake(CGRectGetMaxX(window.bounds) - window.safeAreaInsets.right -
-                                   (NFBGlassTabRailInset + size.width) / 2.0,
-                               CGRectGetMidY(window.bounds) - size.height / 2.0, size.width, size.height);
+    UIEdgeInsets safe = window.safeAreaInsets;
+    CGFloat centerX = NFBGlassTabRailNeedsInset(bar) ? CGRectGetMaxX(window.bounds) - safe.right - NFBGlassTabRailInset / 2.0
+                                                     : CGRectGetMaxX(window.bounds) - safe.right / 2.0;
+    CGRect target = CGRectMake(centerX - size.width / 2.0,
+                               CGRectGetMaxY(window.bounds) - safe.bottom - 12.0 - size.height, size.width,
+                               size.height);
     // Host the rail in the nearest ancestor that covers it, so it receives touches.
     UIView* host = bar.superview;
     while (host.superview && !CGRectContainsRect(host.bounds, [host convertRect:target fromView:nil]))

@@ -167,6 +167,10 @@ BOOL NFBGlassTabRailActive(UIView* view) {
     return size.width > size.height || size.width < NFBGlassTabRailCompactWidth;
 }
 
+BOOL NFBGlassTabRailNeedsInset(UIView* view) {
+    return NFBGlassTabRailActive(view) && view.window.safeAreaInsets.right < 56.0;
+}
+
 BOOL boolIvar(id object, const char* name, BOOL fallback) {
     Ivar ivar = class_getInstanceVariable(object_getClass(object), name);
     if (!ivar) {

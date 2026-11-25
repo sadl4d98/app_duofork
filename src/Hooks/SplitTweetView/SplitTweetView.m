@@ -185,6 +185,8 @@ void BHTConversationWillAppear(UIViewController* conversation, BOOL animated) {
     }
 }
 
+static NSHashTable<UIView*>* BHTHiddenBackButtons(void);
+
 void BHTConversationWillDisappear(UIViewController* conversation, BOOL animated) {
     UINavigationController* navigation = conversation.navigationController;
     NSNumber* previous = objc_getAssociatedObject(conversation, &BHTConversationBarKey);
@@ -192,6 +194,48 @@ void BHTConversationWillDisappear(UIViewController* conversation, BOOL animated)
     if (!previous || !navigation || BHTIsConversationController(navigation.topViewController)) return;
     objc_setAssociatedObject(conversation, &BHTConversationBarKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     [navigation setNavigationBarHidden:previous.boolValue animated:animated];
+    // Other screens keep X's floating back button.
+    for (UIView* button in BHTHiddenBackButtons().allObjects)
+        button.hidden = NO;
+    [BHTHiddenBackButtons() removeAllObjects];
+}
+
+// X shows its own floating glass back button over a post once the bar is
+// hidden. Swiping replaces it, so hide it.
+// ponytail: found by its "Back" accessibility label (English plus UIKit's own).
+static NSHashTable<UIView*>* BHTHiddenBackButtons(void) {
+    static NSHashTable<UIView*>* buttons;
+    if (!buttons) buttons = [NSHashTable weakObjectsHashTable];
+    return buttons;
+}
+
+static void BHTHideFloatingBackButtons(UIView* view, NSSet<NSString*>* labels) {
+    for (UIView* subview in view.subviews) {
+        if ([subview isKindOfClass:UIScrollView.class]) continue; // content, not chrome
+        if ([subview isKindOfClass:UIControl.class] && [labels containsObject:subview.accessibilityLabel]) {
+            if (!subview.hidden) {
+                subview.hidden = YES;
+                [BHTHiddenBackButtons() addObject:subview];
+            }
+            continue;
+        }
+        BHTHideFloatingBackButtons(subview, labels);
+    }
+}
+
+void BHTConversationDidLayout(UIViewController* conversation) {
+    UINavigationController* navigation = conversation.navigationController;
+    if (!NFBLiquidGlassEnabled() || !navigation.navigationBarHidden ||
+        !objc_getAssociatedObject(conversation, &BHTConversationBarKey)) return;
+    static NSSet<NSString*>* labels;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        NSString* uikit = [[NSBundle bundleForClass:UIApplication.class] localizedStringForKey:@"Back"
+                                                                                         value:@"Back"
+                                                                                         table:nil];
+        labels = [NSSet setWithObjects:@"Back", uikit, nil];
+    });
+    BHTHideFloatingBackButtons(navigation.view, labels);
 }
 
 // MARK: - Open the right column at the first reply
@@ -250,18 +294,27 @@ static UIView* BHTCellForView(UIView* view, UIScrollView* scroll) {
     return view;
 }
 
-// Top of the first reply below `focalBottom`, or CGFLOAT_MAX while none has loaded.
-// ponytail: replies are spotted by class name (…StatusView, not the focal one).
-static CGFloat BHTFirstReplyTop(UIScrollView* scroll, CGFloat focalBottom) {
-    __block CGFloat best = CGFLOAT_MAX;
+// Where the replies start below `focalBottom`: the reply sort row ("Relevant ·
+// View quotes"), else the first reply, or CGFLOAT_MAX while neither has loaded.
+// ponytail: both are spotted by name (a "Sort" class or the "View quotes" label;
+// replies by a …StatusView class that isn't the focal post's).
+static CGFloat BHTRepliesTop(UIScrollView* scroll, CGFloat focalBottom) {
+    __block CGFloat sortTop = CGFLOAT_MAX;
+    __block CGFloat replyTop = CGFLOAT_MAX;
     EnumerateSubviewsRecursively(scroll, ^(UIView* view) {
+        if (view.hidden) return;
         NSString* name = NSStringFromClass(view.class);
-        if (![name hasSuffix:@"StatusView"] || [name containsString:@"Focal"] || view.hidden) return;
+        BOOL sort = [name rangeOfString:@"Sort" options:NSCaseInsensitiveSearch].location != NSNotFound ||
+                    ([view isKindOfClass:UILabel.class] && [((UILabel*)view).text isEqualToString:@"View quotes"]);
+        BOOL reply = [name hasSuffix:@"StatusView"] && ![name containsString:@"Focal"];
+        if (!sort && !reply) return;
         UIView* cell = BHTCellForView(view, scroll);
         CGFloat top = CGRectGetMinY([cell convertRect:cell.bounds toView:scroll]);
-        if (top >= focalBottom - 1.0 && top < best) best = top;
+        if (top < focalBottom - 1.0) return;
+        if (sort) sortTop = MIN(sortTop, top);
+        if (reply) replyTop = MIN(replyTop, top);
     });
-    return best;
+    return sortTop < CGFLOAT_MAX ? sortTop : replyTop;
 }
 
 // Replies load after the post and X re-anchors the post while they do, so keep
@@ -274,7 +327,7 @@ static void BHTKeepScrolledToFirstReply(UIView* focal, UIScrollView* scroll, UIV
     }
     UIEdgeInsets inset = scroll.adjustedContentInset;
     CGFloat focalBottom = CGRectGetMaxY([focal convertRect:focal.bounds toView:scroll]);
-    CGFloat reply = BHTFirstReplyTop(scroll, focalBottom);
+    CGFloat reply = BHTRepliesTop(scroll, focalBottom);
     CGFloat limit = scroll.contentSize.height + inset.bottom - CGRectGetHeight(scroll.bounds);
     // Until a reply cell exists, scroll to just above the post's end (kept 1pt on
     // screen so the post isn't recycled) so the cells below it get created.
