@@ -353,6 +353,7 @@ void BHTConversationWillAppear(UIViewController* conversation, BOOL animated) {
 }
 
 static NSHashTable<UIView*>* BHTHiddenBackButtons(void);
+static NSHashTable<UIView*>* BHTMutedHeaders(void);
 
 void BHTConversationWillDisappear(UIViewController* conversation, BOOL animated) {
     UINavigationController* navigation = conversation.navigationController;
