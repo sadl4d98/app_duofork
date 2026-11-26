@@ -729,6 +729,11 @@
     BHTConversationDidLayout((UIViewController*)self);
 }
 
+- (void)viewDidAppear:(BOOL)animated {
+    %orig;
+    BHTConversationDidAppear((UIViewController*)self);
+}
+
 %end
 
 // X's own post header (title view) shows on top of posts and on scroll-up.

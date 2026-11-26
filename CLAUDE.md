@@ -60,9 +60,11 @@ The portable, app-agnostic version of what's below is the skill
   - trims the table's manual top padding to the safe area.
   To get the report, turn on Debug mode and long-press the rail's compose button.
 - X re-pads the post table as it loads (`contentInset.top` 78, later 122). So `TFNTableView
-  setContentInset:` is hooked to cap the top at the safe area on managed posts (`BHTPostTableInset`),
-  pulling the table back to the top if the old padding was showing. A one-off trim on layout lost to
-  later re-pads.
+  setContentInset:` is hooked to cap the top at the safe area on managed posts (`BHTPostTableInset`).
+  A one-off trim on layout lost to later re-pads. **Never move contentOffset there.** X re-pads while
+  scrolling (its collapsing header), and offset corrections tied to inset changes or layout made the
+  post snap back up while scrolling down. The only offset fix is once in `viewDidAppear`
+  (`BHTConversationDidAppear`), when the user isn't touching it.
 - Top fade: with Liquid Glass, X's top `XDesignSystem.ScrollEdgeTreatment` (fade plus blur) is kept
   at alpha 0 (`BHTIsTopScrollEdge`: in the top 25% of the window). iOS 26's own `topEdgeEffect` on
   `TFNTableView`s is hidden too. Bottom edge treatments are untouched.

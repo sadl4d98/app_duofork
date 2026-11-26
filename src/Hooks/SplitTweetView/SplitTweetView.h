@@ -21,6 +21,7 @@ BOOL BHTBackSwipeBlocksScrolling(UIGestureRecognizer* gesture, UIGestureRecogniz
 void BHTConversationWillAppear(UIViewController* conversation, BOOL animated);
 void BHTConversationWillDisappear(UIViewController* conversation, BOOL animated);
 void BHTConversationDidLayout(UIViewController* conversation);
+void BHTConversationDidAppear(UIViewController* conversation);
 void BHTNavigationTitleDidLayout(UIView* title);
 UIEdgeInsets BHTPostTableInset(UIScrollView* table, UIEdgeInsets inset);
 void BHTHideTopEdgeEffect(UIScrollView* scroll);

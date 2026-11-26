@@ -190,18 +190,22 @@ UIEdgeInsets BHTPostTableInset(UIScrollView* table, UIEdgeInsets inset) {
     }
     if (!BHTIsManagedPost(post)) return inset;
     CGFloat safeTop = post.view.safeAreaInsets.top;
-    if (inset.top <= safeTop + 1.0) return inset;
-    inset.top = safeTop;
-    __weak UIScrollView* weakTable = table;
-    dispatch_async(dispatch_get_main_queue(), ^{
-        UIScrollView* strong = weakTable;
-        // Scrolled above the content's top (the old padding showing): move to the top.
-        if (strong && !strong.isTracking && !strong.isDecelerating &&
-            strong.contentOffset.y < -strong.contentInset.top - 1.0) {
-            strong.contentOffset = CGPointMake(strong.contentOffset.x, -strong.contentInset.top);
-        }
-    });
+    // Only the padding: X re-pads while scrolling (its collapsing header), so
+    // moving the scroll position here fought the user's scroll.
+    if (inset.top > safeTop + 1.0) inset.top = safeTop;
     return inset;
+}
+
+static UIScrollView* BHTLargestScrollView(UIView* view);
+
+// Once, when a post appears: if it opened scrolled into the old header padding,
+// show it from the top. Never while the user is scrolling.
+void BHTConversationDidAppear(UIViewController* conversation) {
+    if (!BHTIsManagedPost(conversation)) return;
+    UIScrollView* table = BHTLargestScrollView(conversation.viewIfLoaded);
+    if (!table || table.isTracking || table.isDragging || table.isDecelerating) return;
+    CGFloat top = -table.adjustedContentInset.top;
+    if (table.contentOffset.y < top - 1.0) table.contentOffset = CGPointMake(table.contentOffset.x, top);
 }
 
 // iOS 26's own scroll-edge effect at the top of lists (runtime API: this builds
@@ -438,18 +442,6 @@ void BHTConversationDidLayout(UIViewController* conversation) {
         labels = [NSSet setWithObjects:@"Back", uikit, nil];
     });
     BHTHideFloatingBackButtons(navigation.view, labels);
-
-    // X pads its post table by hand (no automatic insets) to clear the header,
-    // now hidden: trim that padding back to the real safe area.
-    UIScrollView* scroll = BHTLargestScrollView(conversation.viewIfLoaded);
-    CGFloat safeTop = conversation.view.safeAreaInsets.top;
-    UIEdgeInsets inset = scroll.contentInset;
-    if (scroll.contentInsetAdjustmentBehavior == UIScrollViewContentInsetAdjustmentNever && inset.top > safeTop + 1.0) {
-        BOOL atTop = fabs(scroll.contentOffset.y + inset.top) < 1.0;
-        inset.top = safeTop;
-        scroll.contentInset = inset;
-        if (atTop) scroll.contentOffset = CGPointMake(scroll.contentOffset.x, -safeTop);
-    }
 }
 
 // MARK: - Open the right column at the first reply

@@ -150,8 +150,9 @@ Order that works, all in one synchronous call:
     reapply from the current value when nothing is stored;
   - a scroll view padded by hand (`contentInsetAdjustmentBehavior == .never` with its own
     `contentInset.top`). Apps re-pad as content loads (X: 78, then 122), so hook the table's
-    `setContentInset:` to cap the top at the safe area. A one-off trim loses. Move the offset back
-    to the top if the old padding was showing;
+    `setContentInset:` to cap the top at the safe area. A one-off trim loses. **Don't touch
+    `contentOffset` in that hook or on layout.** Apps re-pad during scrolling (collapsing headers), and
+    offset fixes there yank the user back up. Correct the offset once, on appear, when not tracking;
   - the header's own background view (X: `ChromeBackgroundView`), so hide it too.
 - **Top fades.** Glass apps put a fade or blur along the top edge (X: `XDesignSystem.ScrollEdgeTreatment`)
   and iOS 26 adds `UIScrollView.topEdgeEffect`. Once the header is gone, both read as a band, so keep
