@@ -114,14 +114,6 @@ static void BHTPlaceColumn(UIView* column, CGRect frame) {
     }
     _detailVisible = visible;
     self.divider.hidden = NO;
-    // X re-lays the timeline out at its new width in one frame (narrow vs centred),
-    // so fade the old layout out over it instead of letting the content jump.
-    UIView* snapshot = animate ? [self.content.view snapshotViewAfterScreenUpdates:NO] : nil;
-    if (snapshot) {
-        snapshot.frame = self.content.view.frame;
-        snapshot.userInteractionEnabled = NO;
-        [self.view insertSubview:snapshot aboveSubview:self.content.view];
-    }
     // Keep the actual detail controller attached until the closing animation ends
     __weak BHTSplitTweetHostController* weakSelf = self;
     void (^layout)(void) = ^{
@@ -129,12 +121,16 @@ static void BHTPlaceColumn(UIView* column, CGRect frame) {
         [host.view setNeedsLayout];
         [host.view layoutIfNeeded];
         BHTLayoutTweetColumnChrome(host);
-        snapshot.alpha = 0.0;
     };
     void (^finish)(UIViewAnimatingPosition) = ^(UIViewAnimatingPosition position) {
-        [snapshot removeFromSuperview];
         BHTSplitTweetHostController* host = weakSelf;
         if (!host) return;
+        if (host.edgeLink) {
+            [host.edgeLink invalidate];
+            host.edgeLink = nil;
+            [host.view setNeedsLayout];
+            [host.view layoutIfNeeded];
+        }
         host.columnAnimator = nil;
         if (!visible) {
             [host.detail.view removeFromSuperview];
@@ -155,11 +151,32 @@ static void BHTPlaceColumn(UIView* column, CGRect frame) {
         self.columnAnimator = animator;
         [animator addAnimations:layout];
         [animator addCompletion:finish];
+        // The timeline's width follows the sliding column's edge frame by frame, so X
+        // re-lays it out smoothly (as in a window resize) instead of in one jump.
+        self.edgeLink = [CADisplayLink displayLinkWithTarget:self selector:@selector(followColumnEdge)];
+        [self.edgeLink addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
         [animator startAnimation];
     } else {
         layout();
         finish(UIViewAnimatingPositionEnd);
     }
+}
+
+// Each frame of an open/close: end the timeline where the sliding column is drawn.
+// ponytail: X re-lays the timeline out every frame; if that stutters, step the width
+// (e.g. every 8pt) instead.
+- (void)followColumnEdge {
+    CALayer* layer = self.detail.viewIfLoaded.layer;
+    CALayer* shown = layer.presentationLayer ?: layer;
+    if (!shown) return;
+    CGFloat end = [self columnsEndForWidth:CGRectGetWidth(self.view.bounds) leftWidth:NULL];
+    CGFloat divider = 1.0 / MAX(self.view.window.screen.scale, 1.0);
+    CGFloat width = round(MIN(end, CGRectGetMinX(shown.frame) - divider));
+    CGRect frame = self.content.view.frame;
+    if (width <= 0 || fabs(CGRectGetWidth(frame) - width) < 1.0) return;
+    frame.size.width = width;
+    self.content.view.frame = frame;
+    [BHTTweetColumnAppView(self) setNeedsLayout];
 }
 
 - (CGSize)sizeForChildContentContainer:(id<UIContentContainer>)container
@@ -184,7 +201,9 @@ static void BHTPlaceColumn(UIView* column, CGRect frame) {
                                     withParentContainerSize:bounds.size];
     CGFloat leftWidth = contentSize.width;
     BOOL contentResized = !CGSizeEqualToSize(self.content.view.bounds.size, contentSize);
-    self.content.view.frame = CGRectMake(0, 0, leftWidth, bounds.size.height);
+    // Mid open/close, followColumnEdge owns the timeline's width.
+    CGFloat shownWidth = self.edgeLink ? CGRectGetWidth(self.content.view.frame) : leftWidth;
+    self.content.view.frame = CGRectMake(0, 0, shownWidth, bounds.size.height);
     if (contentResized) {
         [self.content.view setNeedsLayout];
         [BHTTweetColumnAppView(self) setNeedsLayout];

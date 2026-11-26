@@ -127,8 +127,10 @@ Order that works, all in one synchronous call:
     `frame` (a mid-swipe layout offsets it by the translation and it jumps). When the swipe closes
     the column, hand off to the close spring from the finger's position, so the other column widens
     during the slide rather than snapping afterwards.
-  - the host app usually re-lays a list out at the new width in one frame; fade a snapshot of the
-    old layout out during the column animation so it doesn't jump.
+  - the host app usually re-lays a list out at the new width in one frame. Instead of animating
+    the left column's frame, drive its width from the sliding column's presentation-layer edge with
+    a CADisplayLink, so the app re-lays out every frame like a window resize. (A snapshot crossfade
+    works but the ghosting is distracting.)
   - when hiding a column until it's scrolled into place, reveal it only after a check that needed
     no correction, not on the first one; late padding or header rows otherwise make it jump.
 - Opening at the first reply instead of a repeat of the post:

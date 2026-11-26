@@ -57,6 +57,7 @@
 @property (nonatomic) BOOL detailVisible;
 @property (nonatomic) BOOL appeared;
 @property (nonatomic, strong) UIViewPropertyAnimator* columnAnimator;
+@property (nonatomic, strong) CADisplayLink* edgeLink;
 - (instancetype)initWithContent:(UIViewController*)content detail:(UINavigationController*)detail;
 - (BOOL)hasRoomForDetail;
 - (CGFloat)columnsEndForWidth:(CGFloat)width leftWidth:(CGFloat*)leftWidth;

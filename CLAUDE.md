@@ -77,7 +77,9 @@ The portable, app-agnostic version of what's below is the skill
   A swipe that closes the column hands off to the close spring from where the finger let go, so
   the timeline widens while the column slides off instead of snapping afterwards.
 - X re-lays the timeline out at a new width in one frame (left-aligned when narrow, centred when
-  wide), so opening/closing the column fades a snapshot of the old layout out over it.
+  wide). During an open/close, a display link (`followColumnEdge`) sets the timeline's width to the
+  sliding column's on-screen edge every frame, so X re-lays it out smoothly like a window resize.
+  A snapshot crossfade was tried first; the user found the ghosting distracting.
 - The right column is revealed only on a scroll-to-replies check that needed no correction;
   revealing on the first reply found showed it, then jumped once X's padding/sort row settled.
 - With the bar hidden on posts, X draws its own floating glass "Back" button. It's hidden while a post
