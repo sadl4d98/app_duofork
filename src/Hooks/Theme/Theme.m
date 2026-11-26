@@ -1576,18 +1576,21 @@ static UIImage* BHTFirstImage(UIView* view) {
     [UIApplication.sharedApplication openURL:[NSURL URLWithString:@"twitter://post"] options:@{} completionHandler:nil];
 }
 
-// Grows `frame` (in `container` coordinates) by the visible views under `view`
-// that sit inside the side strip: the system-drawn bar, since iOS may not use
-// `tabBar` itself for the Duo strip layout.
-static void BHTAddStripViews(UIView* view, UIView* page, UIView* container, CGFloat stripMinX, CGRect* frame) {
+// Finds (in `container` coordinates) the largest visible view under `view`
+// inside the side strip: the bar's background platter. It's steady, unlike the
+// union of everything there, which bulges while the selection slides between
+// tabs. iOS may not use `tabBar` itself for the Duo strip layout.
+static void BHTFindStripPlatter(UIView* view, UIView* page, UIView* container, CGFloat stripMinX, CGRect* frame) {
     for (UIView* subview in view.subviews) {
         if (subview == page || subview.hidden || subview.alpha < 0.01) continue;
         CGRect rect = [container convertRect:subview.bounds fromView:subview];
         if (CGRectGetWidth(rect) > 0 && CGRectGetHeight(rect) > 0 && CGRectGetMinX(rect) >= stripMinX - 4.0 &&
-            CGRectGetHeight(rect) < CGRectGetHeight(container.bounds) * 0.9) {
-            *frame = CGRectUnion(*frame, rect);
+            CGRectGetHeight(rect) < CGRectGetHeight(container.bounds) * 0.9 &&
+            (CGRectIsNull(*frame) ||
+             CGRectGetWidth(rect) * CGRectGetHeight(rect) > CGRectGetWidth(*frame) * CGRectGetHeight(*frame))) {
+            *frame = rect;
         }
-        BHTAddStripViews(subview, page, container, stripMinX, frame);
+        BHTFindStripPlatter(subview, page, container, stripMinX, frame);
     }
 }
 
@@ -1602,8 +1605,8 @@ static void BHTAddStripViews(UIView* view, UIView* page, UIView* container, CGFl
     CGRect bar = CGRectNull;
     if (rail) {
         CGFloat stripMinX = CGRectGetMaxX(container.bounds) - strip;
-        BHTAddStripViews(self.controller.view, self.controller.selectedViewController.viewIfLoaded, container,
-                         stripMinX, &bar);
+        BHTFindStripPlatter(self.controller.view, self.controller.selectedViewController.viewIfLoaded, container,
+                            stripMinX, &bar);
         if (CGRectIsNull(bar)) {
             // Drawn outside our views: assume a bottom-aligned bar of ~56pt per tab.
             CGFloat height = self.items.count * 56.0;
@@ -1629,11 +1632,9 @@ static void BHTAddStripViews(UIView* view, UIView* page, UIView* container, CGFl
                             forState:UIControlStateNormal];
     }
     self.composeButton.accessibilityLabel = floating.accessibilityLabel ?: @"Post";
-    // Sized and centred by the strip, which is steady; the bar's own width
-    // changes while it animates between tabs.
-    CGFloat size = MIN(strip - 8.0, 52.0);
-    CGFloat centerX = CGRectGetMaxX(container.bounds) - strip / 2.0;
-    CGRect frame = CGRectMake(centerX - size / 2.0, CGRectGetMinY(bar) - 12.0 - size, size, size);
+    // Same width and centre line as the bar's platter, just above it.
+    CGFloat size = MAX(36.0, MIN(CGRectGetWidth(bar), strip - 8.0));
+    CGRect frame = CGRectMake(CGRectGetMidX(bar) - size / 2.0, CGRectGetMinY(bar) - 10.0 - size, size, size);
     if (!CGRectEqualToRect(self.compose.frame, frame)) {
         self.compose.frame = frame;
         self.compose.layer.cornerRadius = size / 2.0;

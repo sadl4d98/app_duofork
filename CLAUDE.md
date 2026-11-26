@@ -41,8 +41,13 @@ The portable, app-agnostic version of what's below is the skill
 - X reveals the "Post" bar again when scrolling up a post (and after opening one), so
   `BHTSplitColumnBarHidden` forces it hidden while a post managed by the tweak is on top of its
   navigation stack. The `setNavigationBarHidden:` hooks on XNAV, T1Tab and TFN all route through it.
+- Besides UINavigationBar, X's Liquid Glass post screen has its own collapsing header ("Post" title
+  and glass back button) that shows at the top and on scroll-up. The tweak hooks
+  `_TtC11XNavigation22NavigationBarTitleView` and hides the tallest bar-sized (≤160pt) ancestor of the
+  title while a managed post is on top, restoring it when leaving posts.
 - With the bar hidden on posts, X draws its own floating glass "Back" button. It's hidden while a post
-  is showing (matched by accessibility label) and restored when leaving posts.
+  is showing (matched by accessibility label), along with its ≤80pt glass circle, and restored when
+  leaving posts.
 - To inspect class names on device: turn on the `flex_twitter` setting (bundled FLEX), then search
   runtime classes or use the view selector on the tab bar.
 
@@ -56,8 +61,10 @@ The portable, app-agnostic version of what's below is the skill
   "secondary". If X doesn't end up on the tab, an alert lists how the tap went and the item's
   recognizers and actions.
 - The compose button decides "vertical" with the rail's rule (`NFBGlassTabRailActive` plus a side
-  strip). It finds the system bar by looking for the tab controller's views that sit inside the strip,
-  because `tabBar` isn't what the Duo strip layout draws.
+  strip). It finds the system bar's platter as the largest visible view of the tab controller inside
+  the strip, because `tabBar` isn't what the Duo strip layout draws. It copies the platter's width and
+  centre line. A union of all strip views bulged while the selection slid between tabs, which made the
+  button jump and grow.
 - While the native bar is vertical, a tinted glass compose button sits above it and replaces X's "+".
   FLEX search on X 12.46: the Liquid Glass "+" is an `XDSButton` (a UIControl, 48×48) with
   accessibility label "Compose post". It's registered by its label, then hidden together with its

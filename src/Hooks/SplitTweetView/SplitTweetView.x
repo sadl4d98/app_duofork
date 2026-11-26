@@ -730,6 +730,21 @@
 
 %end
 
+// X's own post header (title view) shows on top of posts and on scroll-up.
+%hook _TtC11XNavigation22NavigationBarTitleView
+
+- (void)didMoveToWindow {
+    %orig;
+    BHTNavigationTitleDidLayout((UIView*)self);
+}
+
+- (void)layoutSubviews {
+    %orig;
+    BHTNavigationTitleDidLayout((UIView*)self);
+}
+
+%end
+
 %hook T1ConversationFocalStatusView
 
 - (void)didMoveToWindow {

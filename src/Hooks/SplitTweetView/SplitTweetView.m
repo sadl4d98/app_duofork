@@ -215,18 +215,46 @@ static NSHashTable<UIView*>* BHTHiddenBackButtons(void) {
     return buttons;
 }
 
+static void BHTHideForPost(UIView* view) {
+    if (view.hidden) return;
+    view.hidden = YES;
+    [BHTHiddenBackButtons() addObject:view];
+}
+
 static void BHTHideFloatingBackButtons(UIView* view, NSSet<NSString*>* labels) {
     for (UIView* subview in view.subviews) {
         if ([subview isKindOfClass:UIScrollView.class]) continue; // content, not chrome
         if ([subview isKindOfClass:UIControl.class] && [labels containsObject:subview.accessibilityLabel]) {
-            if (!subview.hidden) {
-                subview.hidden = YES;
-                [BHTHiddenBackButtons() addObject:subview];
-            }
+            // Its glass circle too: the largest ancestor that is still button-sized.
+            UIView* button = subview;
+            while (button.superview && button.superview != view && CGRectGetWidth(button.superview.bounds) <= 80.0 &&
+                   CGRectGetHeight(button.superview.bounds) <= 80.0)
+                button = button.superview;
+            BHTHideForPost(button);
             continue;
         }
         BHTHideFloatingBackButtons(subview, labels);
     }
+}
+
+// X's Liquid Glass post screen has its own collapsing header ("Post" title,
+// back button) besides UINavigationBar; it shows at the top and on scrolling
+// up. Hide the strip holding its title view while a post is managed here.
+void BHTNavigationTitleDidLayout(UIView* title) {
+    if (!NFBLiquidGlassEnabled() || !title.window) return;
+    UINavigationController* navigation = nil;
+    for (UIResponder* responder = title.nextResponder; responder && !navigation; responder = responder.nextResponder) {
+        if ([responder isKindOfClass:UINavigationController.class]) navigation = (UINavigationController*)responder;
+    }
+    UIViewController* top = navigation.topViewController;
+    if (!BHTIsConversationController(top) || !objc_getAssociatedObject(top, &BHTConversationBarKey)) return;
+    // The header: the tallest ancestor still bar-sized (a header, not the screen).
+    UIView* header = title;
+    for (UIView* view = title.superview; view && view != navigation.view; view = view.superview) {
+        if (CGRectGetHeight(view.bounds) > 160.0 || [view isKindOfClass:UIScrollView.class]) break;
+        header = view;
+    }
+    BHTHideForPost(header);
 }
 
 void BHTConversationDidLayout(UIViewController* conversation) {
