@@ -50,6 +50,17 @@ The portable, app-agnostic version of what's below is the skill
   assumes X reserves the space that way. A second floating back button (an `XDSButton` labelled
   "Back") appears after scrolling down; the XDSButton hooks keep it hidden on managed posts
   (`BHTIsPostBackButton`).
+- Post-layout report (X 12.46, outer screen): X's post header is `XNavigation.NavigationBarView`
+  (377×78) over `XNavigation.ChromeBackgroundView`. The back button is an `XDSButton` inside an
+  `XDSGlass` circle (45×44). The post VC (`T1ConversationContainerViewController`) has
+  `additionalSafeAreaInsets.top = 78`, set before the tweak starts managing it. Its `TFNTableView`
+  pads itself by hand (`contentInsetAdjustmentBehavior` never, `contentInset.top` 78). So the tweak:
+  - hooks both header classes (hidden while a managed post is on top, restored on leave);
+  - reapplies insets from the current value when nothing is stored;
+  - trims the table's manual top padding to the safe area.
+  To get the report, turn on Debug mode and long-press the rail's compose button.
+- The split column's open/close spring is critically damped (1.0). X's own 0.75 made the timeline
+  bounce after a swipe-back close.
 - With the bar hidden on posts, X draws its own floating glass "Back" button. It's hidden while a post
   is showing (matched by accessibility label), along with its ≤80pt glass circle, and restored when
   leaving posts.

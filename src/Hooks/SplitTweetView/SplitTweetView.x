@@ -128,8 +128,9 @@
         [BHTTweetState(host) scheduleUpdate];
     };
     if (animate) {
-        // Match T1AppSplitViewController's spring branch (damping ratio 0.75).
-        UISpringTimingParameters* timing = [[UISpringTimingParameters alloc] initWithDampingRatio:0.75];
+        // Critically damped: X's own split uses 0.75, whose overshoot made the
+        // timeline visibly bounce as the column re-laid out on close.
+        UISpringTimingParameters* timing = [[UISpringTimingParameters alloc] initWithDampingRatio:1.0];
         UIViewPropertyAnimator* animator = [[UIViewPropertyAnimator alloc]
             initWithDuration:CATransaction.animationDuration
             timingParameters:timing];
@@ -741,6 +742,44 @@
 - (void)layoutSubviews {
     %orig;
     BHTNavigationTitleDidLayout((UIView*)self);
+}
+
+%end
+
+// X's own post header: XNavigation.NavigationBarView (title, glass back button)
+// over XNavigation.ChromeBackgroundView. Hidden while a managed post is on top.
+%hook _TtC11XNavigation17NavigationBarView
+
+- (void)didMoveToWindow {
+    %orig;
+    BHTPostChromeChanged((UIView*)self);
+}
+
+- (void)layoutSubviews {
+    %orig;
+    BHTPostChromeChanged((UIView*)self);
+}
+
+- (void)setHidden:(BOOL)hidden {
+    %orig(hidden || BHTIsPostChrome((UIView*)self));
+}
+
+%end
+
+%hook _TtC11XNavigation20ChromeBackgroundView
+
+- (void)didMoveToWindow {
+    %orig;
+    BHTPostChromeChanged((UIView*)self);
+}
+
+- (void)layoutSubviews {
+    %orig;
+    BHTPostChromeChanged((UIView*)self);
+}
+
+- (void)setHidden:(BOOL)hidden {
+    %orig(hidden || BHTIsPostChrome((UIView*)self));
 }
 
 %end

@@ -1831,7 +1831,9 @@ UIEdgeInsets BHTTabChildSafeAreaInsets(UIViewController* controller, UIEdgeInset
 
 void BHTReapplySafeAreaInsets(UIViewController* controller) {
     NSValue* requested = objc_getAssociatedObject(controller, &BHTRequestedSafeAreaKey);
-    if (requested) controller.additionalSafeAreaInsets = requested.UIEdgeInsetsValue;
+    // Nothing stored means the current value is still X's own: X sets the post's
+    // header room (top 78) before the tweak starts managing the post.
+    controller.additionalSafeAreaInsets = requested ? requested.UIEdgeInsetsValue : controller.additionalSafeAreaInsets;
 }
 
 void BHTReapplyTabChildSafeAreaInsets(UIView* bar) {

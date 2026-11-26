@@ -120,7 +120,9 @@ Order that works, all in one synchronous call:
   - don't begin over horizontal scrollers that can still scroll back;
   - make vertical scroll views wait for it (`shouldBeRequiredToFailByGestureRecognizer:`);
   - drag the column with a transform;
-  - on release past 30% or above 600pt/s, either pop inside the column or close it.
+  - on release past 30% or above 600pt/s, either pop inside the column or close it;
+  - animate the column open and close with a **critically damped** spring (1.0). A bouncier spring,
+    like X's 0.75, makes the remaining column visibly bounce as it re-lays out.
 - Opening at the first reply instead of a repeat of the post:
   - Keep the column invisible, or covered with a spinner (setting), until it's scrolled into place,
     then fade it in. A 2s safety timer always reveals it.
@@ -143,6 +145,12 @@ Order that works, all in one synchronous call:
   Hiding it leaves an empty strip, because the app still reserves room for it. Zero the top of
   `additionalSafeAreaInsets` for the page and its navigation controller, storing and reapplying the
   app's value, the same way as the tab bar's bottom inset.
+- **The space the header leaves behind can come from three places.** All three applied in X:
+  - the page's `additionalSafeAreaInsets.top`, often set **before** your code manages the page, so
+    reapply from the current value when nothing is stored;
+  - a scroll view padded by hand (`contentInsetAdjustmentBehavior == .never` with its own
+    `contentInset.top`), so trim it to the safe area and keep the offset at the top;
+  - the header's own background view (X: `ChromeBackgroundView`), so hide it too.
 - **Back buttons can come back.** A second floating back button may appear only after scrolling down.
   Hook the glass button class itself (X: `XDSButton`) and keep any one labelled "Back" hidden while a
   managed page is on top. A one-off view-tree scan misses it.

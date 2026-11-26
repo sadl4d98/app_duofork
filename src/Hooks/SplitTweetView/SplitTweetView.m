@@ -338,7 +338,7 @@ static void BHTHideFloatingBackButtons(UIView* view, NSSet<NSString*>* labels) {
         if ([subview isKindOfClass:UIControl.class] && [labels containsObject:subview.accessibilityLabel]) {
             // Its glass circle too: the largest ancestor that is still button-sized.
             UIView* button = subview;
-            while (button.superview && button.superview != view && CGRectGetWidth(button.superview.bounds) <= 80.0 &&
+            while (button.superview && CGRectGetWidth(button.superview.bounds) <= 80.0 &&
                    CGRectGetHeight(button.superview.bounds) <= 80.0)
                 button = button.superview;
             BHTHideForPost(button);
@@ -346,6 +346,23 @@ static void BHTHideFloatingBackButtons(UIView* view, NSSet<NSString*>* labels) {
         }
         BHTHideFloatingBackButtons(subview, labels);
     }
+}
+
+// Whether `view` is X's post header chrome (NavigationBarView or its
+// ChromeBackgroundView) in a navigation stack showing a managed post.
+BOOL BHTIsPostChrome(UIView* view) {
+    if (!NFBLiquidGlassEnabled() || !view.window) return NO;
+    for (UIResponder* responder = view.nextResponder; responder; responder = responder.nextResponder) {
+        if ([responder isKindOfClass:UINavigationController.class]) {
+            UIViewController* top = ((UINavigationController*)responder).topViewController;
+            return BHTIsConversationController(top) && objc_getAssociatedObject(top, &BHTConversationBarKey);
+        }
+    }
+    return NO;
+}
+
+void BHTPostChromeChanged(UIView* view) {
+    if (!view.hidden && BHTIsPostChrome(view)) BHTHideForPost(view);
 }
 
 // X's Liquid Glass post screen has its own collapsing header ("Post" title,
@@ -381,6 +398,18 @@ void BHTConversationDidLayout(UIViewController* conversation) {
         labels = [NSSet setWithObjects:@"Back", uikit, nil];
     });
     BHTHideFloatingBackButtons(navigation.view, labels);
+
+    // X pads its post table by hand (no automatic insets) to clear the header,
+    // now hidden: trim that padding back to the real safe area.
+    UIScrollView* scroll = BHTLargestScrollView(conversation.viewIfLoaded);
+    CGFloat safeTop = conversation.view.safeAreaInsets.top;
+    UIEdgeInsets inset = scroll.contentInset;
+    if (scroll.contentInsetAdjustmentBehavior == UIScrollViewContentInsetAdjustmentNever && inset.top > safeTop + 1.0) {
+        BOOL atTop = fabs(scroll.contentOffset.y + inset.top) < 1.0;
+        inset.top = safeTop;
+        scroll.contentInset = inset;
+        if (atTop) scroll.contentOffset = CGPointMake(scroll.contentOffset.x, -safeTop);
+    }
 }
 
 // MARK: - Open the right column at the first reply
