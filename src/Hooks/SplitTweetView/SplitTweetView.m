@@ -539,10 +539,11 @@ static void BHTKeepScrolledToFirstReply(UIView* focal, UIScrollView* scroll, UIV
     // Until a reply cell exists, scroll to just above the post's end (kept 1pt on
     // screen so the post isn't recycled) so the cells below it get created.
     CGFloat target = reply < CGFLOAT_MAX ? MIN(reply - inset.top, limit) : focalBottom - inset.top - 1.0;
-    if (target > -inset.top && target <= limit && fabs(scroll.contentOffset.y - target) > 1.0) {
-        scroll.contentOffset = CGPointMake(scroll.contentOffset.x, target);
-    }
-    if (reply < CGFLOAT_MAX) BHTRevealColumn(column);
+    BOOL moved = target > -inset.top && target <= limit && fabs(scroll.contentOffset.y - target) > 1.0;
+    if (moved) scroll.contentOffset = CGPointMake(scroll.contentOffset.x, target);
+    // Reveal once a check needed no correction: X's padding and the sort row can
+    // still move things right after the first reply turns up.
+    if (reply < CGFLOAT_MAX && !moved) BHTRevealColumn(column);
     __weak UIView* weakFocal = focal;
     __weak UIScrollView* weakScroll = scroll;
     __weak UIView* weakColumn = column;

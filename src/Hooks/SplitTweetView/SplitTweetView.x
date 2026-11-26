@@ -114,6 +114,14 @@ static void BHTPlaceColumn(UIView* column, CGRect frame) {
     }
     _detailVisible = visible;
     self.divider.hidden = NO;
+    // X re-lays the timeline out at its new width in one frame (narrow vs centred),
+    // so fade the old layout out over it instead of letting the content jump.
+    UIView* snapshot = animate ? [self.content.view snapshotViewAfterScreenUpdates:NO] : nil;
+    if (snapshot) {
+        snapshot.frame = self.content.view.frame;
+        snapshot.userInteractionEnabled = NO;
+        [self.view insertSubview:snapshot aboveSubview:self.content.view];
+    }
     // Keep the actual detail controller attached until the closing animation ends
     __weak BHTSplitTweetHostController* weakSelf = self;
     void (^layout)(void) = ^{
@@ -121,8 +129,10 @@ static void BHTPlaceColumn(UIView* column, CGRect frame) {
         [host.view setNeedsLayout];
         [host.view layoutIfNeeded];
         BHTLayoutTweetColumnChrome(host);
+        snapshot.alpha = 0.0;
     };
     void (^finish)(UIViewAnimatingPosition) = ^(UIViewAnimatingPosition position) {
+        [snapshot removeFromSuperview];
         BHTSplitTweetHostController* host = weakSelf;
         if (!host) return;
         host.columnAnimator = nil;

@@ -76,6 +76,10 @@ The portable, app-agnostic version of what's below is the skill
   (`BHTPlaceColumn`), never `frame`: a layout pass mid-swipe made it jump left over the timeline.
   A swipe that closes the column hands off to the close spring from where the finger let go, so
   the timeline widens while the column slides off instead of snapping afterwards.
+- X re-lays the timeline out at a new width in one frame (left-aligned when narrow, centred when
+  wide), so opening/closing the column fades a snapshot of the old layout out over it.
+- The right column is revealed only on a scroll-to-replies check that needed no correction;
+  revealing on the first reply found showed it, then jumped once X's padding/sort row settled.
 - With the bar hidden on posts, X draws its own floating glass "Back" button. It's hidden while a post
   is showing (matched by accessibility label), along with its ≤80pt glass circle, and restored when
   leaving posts.
