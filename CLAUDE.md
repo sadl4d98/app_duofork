@@ -92,8 +92,12 @@ The portable, app-agnostic version of what's below is the skill
   tap-to-scroll-to-top: the scroll bar flashed and the author couldn't be tapped). They get
   `userInteractionEnabled = NO` while the post is managed (`BHTMuteHeaderContainers`). Unconfirmed;
   the debug report's "Taps at x=60" lists what the top of the post hit-tests to.
-- The native tab host is a child of X's tab controller (the bar's owning controller), not the root,
-  so it slides with the page when X's side menu opens.
+- The native tab host stays a child of the root controller, but its view sits in the first
+  full-window view above X's bar (`BHTFullWindowAncestor`), so it slides with the page when X's side
+  menu opens. Making it a child of X's tab controller turned the bar horizontal with an iPad sidebar
+  handle: that view stops at the side strip, and iOS only puts the bar in the strip when it covers it.
+- The debug report works on any screen: taps at the top (x=60), every "Back" control with its two
+  ancestors and subviews (hidden/alpha, "(tweak)" if the tweak hid it), and the top strip.
 - To inspect class names on device: turn on the `flex_twitter` setting (bundled FLEX), then search
   runtime classes or use the view selector on the tab bar.
 

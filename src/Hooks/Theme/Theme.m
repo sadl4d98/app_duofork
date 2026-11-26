@@ -1578,7 +1578,7 @@ static UIImage* BHTFirstImage(UIView* view) {
 
 - (void)didLongPressCompose:(UILongPressGestureRecognizer*)press {
     if (press.state != UIGestureRecognizerStateBegan || ![BHTSettings boolForKey:@"flex_twitter"]) return;
-    NSString* report = BHTPostLayoutReport() ?: @"No post is showing.";
+    NSString* report = BHTPostLayoutReport(self.bar.window) ?: @"No window.";
     UIViewController* top = self.bar.window.rootViewController;
     while (top.presentedViewController)
         top = top.presentedViewController;
@@ -1671,31 +1671,51 @@ static void BHTFindStripPlatter(UIView* view, UIView* page, UIView* container, C
     }
 }
 
-// The controller that owns X's bar (X's tab controller). Hosting the native bar
-// there, not at the root, makes it slide with the page when the side menu opens.
-static UIViewController* BHTOwnerControllerForView(UIView* view) {
+// The top of the view controller chain that shows X's bar (the root, or
+// whatever X presents its main interface in). Hosting the native bar under a
+// lower controller made iOS lay it out horizontally.
+static UIViewController* BHTTopControllerForView(UIView* view) {
+    UIViewController* controller = nil;
     for (UIResponder* responder = view.nextResponder; responder; responder = responder.nextResponder) {
-        if ([responder isKindOfClass:UIViewController.class]) return (UIViewController*)responder;
+        if ([responder isKindOfClass:UIViewController.class]) controller = (UIViewController*)responder;
     }
-    return nil;
+    while (controller.parentViewController)
+        controller = controller.parentViewController;
+    return controller;
+}
+
+// The first view above X's bar that covers the whole window. X's side menu slides
+// the page by moving a view like this, so the bar moves with it; it still covers
+// the side strip, which iOS needs in order to put the bar there (X's own tab view
+// stops at the strip).
+static UIView* BHTFullWindowAncestor(UIView* view, UIView* fallback) {
+    CGSize size = view.window.bounds.size;
+    for (UIView* ancestor = view.superview; ancestor && ancestor != fallback; ancestor = ancestor.superview) {
+        if (CGRectGetWidth(ancestor.bounds) >= size.width - 1.0 && CGRectGetHeight(ancestor.bounds) >= size.height - 1.0) {
+            return ancestor;
+        }
+    }
+    return fallback;
 }
 
 - (void)attach {
-    UIViewController* parent = BHTOwnerControllerForView(self.bar);
+    UIViewController* parent = BHTTopControllerForView(self.bar);
     if (!parent.isViewLoaded) return;
+    UIView* host = BHTFullWindowAncestor(self.bar, parent.view);
     UITabBarController* controller = self.controller;
-    if (controller.parentViewController != parent) {
+    if (controller.parentViewController != parent || self.container.superview != host) {
         [self detach];
         [parent addChildViewController:controller];
-        self.container.frame = parent.view.bounds;
-        [parent.view addSubview:self.container];
+        self.container.frame = host.bounds;
+        self.container.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+        [host addSubview:self.container];
         controller.view.frame = self.container.bounds;
         controller.view.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
         controller.view.backgroundColor = UIColor.clearColor;
         [self.container addSubview:controller.view];
         [controller didMoveToParentViewController:parent];
     }
-    if (parent.view.subviews.lastObject != self.container) [parent.view bringSubviewToFront:self.container];
+    if (host.subviews.lastObject != self.container) [host bringSubviewToFront:self.container];
     BHTActiveNativeHost = self;
 }
 

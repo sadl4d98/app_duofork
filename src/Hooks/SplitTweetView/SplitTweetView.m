@@ -175,6 +175,9 @@ static BOOL BHTIsManagedPost(UIViewController* controller) {
            objc_getAssociatedObject(controller, &BHTConversationBarKey);
 }
 
+static NSHashTable<UIView*>* BHTHiddenBackButtons(void);
+static NSHashTable<UIView*>* BHTMutedHeaders(void);
+
 // X pads its post table by hand (no automatic insets) and re-pads it as the
 // post loads (78, later 122) to clear the header the tweak hides. Cap the top
 // at the real safe area, and pull the table back to the top if it was there.
@@ -292,38 +295,70 @@ static void BHTReportViews(UIView* view, NSMutableString* top, NSMutableString* 
     }
 }
 
-NSString* BHTPostLayoutReport(void) {
-    UIViewController* post = BHTCurrentPost;
-    UINavigationController* navigation = post.navigationController;
-    if (!post.viewIfLoaded.window) return nil;
-    NSMutableString* report = [NSMutableString new];
-    [report appendFormat:@"Post %@ additional %@ safe %@\n", NSStringFromClass(post.class),
-                         BHTInsetsText(post.additionalSafeAreaInsets), BHTInsetsText(post.view.safeAreaInsets)];
-    [report appendFormat:@"Nav %@ additional %@ barHidden %d\n", NSStringFromClass(navigation.class),
-                         BHTInsetsText(navigation.additionalSafeAreaInsets), navigation.navigationBarHidden];
-    for (UIViewController* parent = navigation.parentViewController; parent; parent = parent.parentViewController) {
-        [report appendFormat:@"Parent %@ additional %@\n", NSStringFromClass(parent.class),
-                             BHTInsetsText(parent.additionalSafeAreaInsets)];
+// A view and its two nearest ancestors: class, hidden, alpha.
+static NSString* BHTViewStateText(UIView* view) {
+    NSMutableString* text = [NSMutableString new];
+    for (NSUInteger depth = 0; view && depth < 3; depth++, view = view.superview) {
+        [text appendFormat:@"%@%@%@%@%@", depth ? @" < " : @"", NSStringFromClass(view.class),
+                           view.hidden ? @" hidden" : @"", view.alpha < 0.01 ? @" a0" : @"",
+                           [BHTHiddenBackButtons() containsObject:view] ? @" (tweak)" : @""];
     }
-    UIScrollView* scroll = BHTLargestScrollView(post.view);
-    [report appendFormat:@"Scroll %@ %@ inset %@ adjusted %@ behavior %ld\n", NSStringFromClass(scroll.class),
-                         BHTRectText([scroll convertRect:scroll.bounds toView:nil]), BHTInsetsText(scroll.contentInset),
-                         BHTInsetsText(scroll.adjustedContentInset), (long)scroll.contentInsetAdjustmentBehavior];
+    return text;
+}
+
+// Debug report (long-press the rail's compose button in Debug mode). Works on
+// any screen; the post section only when a post is showing.
+NSString* BHTPostLayoutReport(UIWindow* screenWindow) {
+    UIViewController* post = BHTCurrentPost;
+    UIWindow* window = post.viewIfLoaded.window ?: screenWindow;
+    if (!window) return nil;
+    NSMutableString* report = [NSMutableString new];
+    UINavigationController* navigation = post.navigationController;
+    if (post.viewIfLoaded.window) {
+        [report appendFormat:@"Post %@ additional %@ safe %@ managed %d\n", NSStringFromClass(post.class),
+                             BHTInsetsText(post.additionalSafeAreaInsets), BHTInsetsText(post.view.safeAreaInsets),
+                             BHTIsManagedPost(post)];
+        [report appendFormat:@"Nav %@ top %@ additional %@ barHidden %d\n", NSStringFromClass(navigation.class),
+                             NSStringFromClass(navigation.topViewController.class),
+                             BHTInsetsText(navigation.additionalSafeAreaInsets), navigation.navigationBarHidden];
+        UIScrollView* scroll = BHTLargestScrollView(post.view);
+        [report appendFormat:@"Scroll %@ %@ inset %@ adjusted %@\n", NSStringFromClass(scroll.class),
+                             BHTRectText([scroll convertRect:scroll.bounds toView:nil]),
+                             BHTInsetsText(scroll.contentInset), BHTInsetsText(scroll.adjustedContentInset)];
+    } else {
+        [report appendString:@"No post showing.\n"];
+    }
+    [report appendFormat:@"Muted headers %lu, tweak-hidden %lu\n", (unsigned long)BHTMutedHeaders().count,
+                         (unsigned long)BHTHiddenBackButtons().count];
     [report appendString:@"\nTaps at x=60:\n"];
     for (CGFloat y = 60.0; y <= 220.0; y += 40.0) {
-        UIView* hit = [post.view.window hitTest:CGPointMake(60.0, y) withEvent:nil];
+        UIView* hit = [window hitTest:CGPointMake(60.0, y) withEvent:nil];
         [report appendFormat:@"y%.0f", y];
-        for (NSUInteger depth = 0; hit && depth < 4; depth++, hit = hit.superview) {
-            [report appendFormat:@" < %@%@", NSStringFromClass(hit.class),
-                                 hit.gestureRecognizers.count ? [NSString stringWithFormat:@"(%lu gr)", (unsigned long)hit.gestureRecognizers.count] : @""];
+        for (NSUInteger depth = 0; hit && depth < 5; depth++, hit = hit.superview) {
+            [report appendFormat:@" < %@%@%@", NSStringFromClass(hit.class),
+                                 hit.gestureRecognizers.count
+                                     ? [NSString stringWithFormat:@"(%lu gr)", (unsigned long)hit.gestureRecognizers.count]
+                                     : @"",
+                                 [BHTMutedHeaders() containsObject:hit] ? @"(muted)" : @""];
         }
         [report appendString:@"\n"];
     }
+    // Every "Back" control with its circle, and what's inside it.
+    [report appendString:@"\nBack buttons:\n"];
+    for (UIWindow* each in window.windowScene.windows) {
+        EnumerateSubviewsRecursively(each, ^(UIView* view) {
+            if (![view.accessibilityLabel isEqualToString:@"Back"] || report.length > 4000) return;
+            CGRect rect = [view convertRect:view.bounds toView:nil];
+            [report appendFormat:@"%@ %@\n", BHTRectText(rect), BHTViewStateText(view)];
+            for (UIView* inner in view.subviews)
+                [report appendFormat:@"  - %@\n", BHTViewStateText(inner)];
+        });
+    }
     NSMutableString* top = [NSMutableString new];
     NSMutableString* back = [NSMutableString new];
-    for (UIWindow* window in post.view.window.windowScene.windows)
-        BHTReportViews(window, top, back, 0);
-    [report appendFormat:@"\nBack views:\n%@\nTop strip:\n%@", back.length ? back : @"none\n", top];
+    for (UIWindow* each in window.windowScene.windows)
+        BHTReportViews(each, top, back, 0);
+    [report appendFormat:@"\nTop strip:\n%@", top];
     return report;
 }
 
@@ -351,9 +386,6 @@ void BHTConversationWillAppear(UIViewController* conversation, BOOL animated) {
         objc_setAssociatedObject(conversation, &BHTConversationSwipeKey, swipe, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
 }
-
-static NSHashTable<UIView*>* BHTHiddenBackButtons(void);
-static NSHashTable<UIView*>* BHTMutedHeaders(void);
 
 void BHTConversationWillDisappear(UIViewController* conversation, BOOL animated) {
     UINavigationController* navigation = conversation.navigationController;

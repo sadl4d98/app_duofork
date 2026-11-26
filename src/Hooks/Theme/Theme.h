@@ -51,7 +51,7 @@ BOOL BHTPostOwnsTopInset(UIViewController* controller);
 BOOL BHTIsPostBackButton(UIView* button);
 UIView* BHTHidePostBackButton(UIView* button);
 // Debug: what the current post screen looks like (insets, top-strip views, back buttons).
-NSString* BHTPostLayoutReport(void);
+NSString* BHTPostLayoutReport(UIWindow* screenWindow);
 void BHTReapplyTabChildSafeAreaInsets(UIView* bar);
 void BHTScheduleGlassTabRailUpdate(UIView* view);
 // X's floating compose button, replaced by a glass button on the native rail.
