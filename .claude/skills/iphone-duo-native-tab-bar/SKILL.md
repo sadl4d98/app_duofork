@@ -149,8 +149,13 @@ Order that works, all in one synchronous call:
   - the page's `additionalSafeAreaInsets.top`, often set **before** your code manages the page, so
     reapply from the current value when nothing is stored;
   - a scroll view padded by hand (`contentInsetAdjustmentBehavior == .never` with its own
-    `contentInset.top`), so trim it to the safe area and keep the offset at the top;
+    `contentInset.top`). Apps re-pad as content loads (X: 78, then 122), so hook the table's
+    `setContentInset:` to cap the top at the safe area. A one-off trim loses. Move the offset back
+    to the top if the old padding was showing;
   - the header's own background view (X: `ChromeBackgroundView`), so hide it too.
+- **Top fades.** Glass apps put a fade or blur along the top edge (X: `XDesignSystem.ScrollEdgeTreatment`)
+  and iOS 26 adds `UIScrollView.topEdgeEffect`. Once the header is gone, both read as a band, so keep
+  the top treatment at alpha 0 (hook `setAlpha:`) and hide `topEdgeEffect` at runtime.
 - **Back buttons can come back.** A second floating back button may appear only after scrolling down.
   Hook the glass button class itself (X: `XDSButton`) and keep any one labelled "Back" hidden while a
   managed page is on top. A one-off view-tree scan misses it.

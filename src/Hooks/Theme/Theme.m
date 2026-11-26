@@ -251,6 +251,13 @@ static void BHTSaveDimOriginalBackground(UIView* view, UIColor* original) {
                              OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 }
 
+BOOL BHTIsTopScrollEdge(UIView* treatment) {
+    UIWindow* window = treatment.window;
+    if (!NFBLiquidGlassEnabled() || !window) return NO;
+    CGRect rect = [treatment convertRect:treatment.bounds toView:nil];
+    return CGRectGetMinY(rect) < CGRectGetHeight(window.bounds) * 0.25;
+}
+
 void BHTApplyScrollEdgeBlur(XDSBlur* blur) {
     if (!BHTIsInsideScrollEdgeTreatment(blur)) return;
     Ivar tintField = class_getInstanceVariable(object_getClass(blur), "tintView");

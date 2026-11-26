@@ -22,6 +22,8 @@ void BHTUpdateDimGlass(UIView* glass);
 BOOL BHTIsInsideScrollEdgeTreatment(UIView* view);
 NSArray* BHTThemeGradientColors(CAGradientLayer* layer, NSArray* colors);
 void BHTApplyScrollEdgeBlur(XDSBlur* blur);
+// X's top-edge fade/blur, removed with Liquid Glass.
+BOOL BHTIsTopScrollEdge(UIView* treatment);
 void BHTApplyScrollEdgeFade(UIView* fade);
 void BHTApplyDimScrollEdgeChildren(UIView* treatment);
 UIColor* BHTThemeViewBackground(UIView* view, UIColor* color);

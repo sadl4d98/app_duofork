@@ -784,6 +784,19 @@
 
 %end
 
+%hook TFNTableView
+
+- (void)setContentInset:(UIEdgeInsets)inset {
+    %orig(BHTPostTableInset((UIScrollView*)self, inset));
+}
+
+- (void)didMoveToWindow {
+    %orig;
+    if (((UIView*)self).window) BHTHideTopEdgeEffect((UIScrollView*)self);
+}
+
+%end
+
 %hook T1ConversationFocalStatusView
 
 - (void)didMoveToWindow {

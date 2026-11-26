@@ -108,8 +108,19 @@ static BOOL updatingTabIconColor = NO;
 
 - (void)layoutSubviews {
     %orig;
+    if (BHTIsTopScrollEdge((UIView*)self)) ((UIView*)self).alpha = 0.0;
     if (!BHTDimThemeEnabled()) return;
     BHTApplyDimScrollEdgeChildren(self);
+}
+
+// With Liquid Glass, X's fade/blur along the top edge is removed.
+- (void)setAlpha:(CGFloat)alpha {
+    %orig(BHTIsTopScrollEdge((UIView*)self) ? 0.0 : alpha);
+}
+
+- (void)didMoveToWindow {
+    %orig;
+    if (BHTIsTopScrollEdge((UIView*)self)) ((UIView*)self).alpha = 0.0;
 }
 
 %end

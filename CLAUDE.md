@@ -59,6 +59,15 @@ The portable, app-agnostic version of what's below is the skill
   - reapplies insets from the current value when nothing is stored;
   - trims the table's manual top padding to the safe area.
   To get the report, turn on Debug mode and long-press the rail's compose button.
+- X re-pads the post table as it loads (`contentInset.top` 78, later 122). So `TFNTableView
+  setContentInset:` is hooked to cap the top at the safe area on managed posts (`BHTPostTableInset`),
+  pulling the table back to the top if the old padding was showing. A one-off trim on layout lost to
+  later re-pads.
+- Top fade: with Liquid Glass, X's top `XDesignSystem.ScrollEdgeTreatment` (fade plus blur) is kept
+  at alpha 0 (`BHTIsTopScrollEdge`: in the top 25% of the window). iOS 26's own `topEdgeEffect` on
+  `TFNTableView`s is hidden too. Bottom edge treatments are untouched.
+- Builds: start `Build Tweak` only **after** `git push` has finished. Starting both at once built the
+  previous commit.
 - The split column's open/close spring is critically damped (1.0). X's own 0.75 made the timeline
   bounce after a swipe-back close.
 - With the bar hidden on posts, X draws its own floating glass "Back" button. It's hidden while a post

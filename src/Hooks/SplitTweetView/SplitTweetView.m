@@ -175,6 +175,46 @@ static BOOL BHTIsManagedPost(UIViewController* controller) {
            objc_getAssociatedObject(controller, &BHTConversationBarKey);
 }
 
+// X pads its post table by hand (no automatic insets) and re-pads it as the
+// post loads (78, later 122) to clear the header the tweak hides. Cap the top
+// at the real safe area, and pull the table back to the top if it was there.
+UIEdgeInsets BHTPostTableInset(UIScrollView* table, UIEdgeInsets inset) {
+    if (!NFBLiquidGlassEnabled() || table.contentInsetAdjustmentBehavior != UIScrollViewContentInsetAdjustmentNever) {
+        return inset;
+    }
+    UIViewController* post = nil;
+    for (UIResponder* responder = table.nextResponder; responder && !post; responder = responder.nextResponder) {
+        if ([responder isKindOfClass:UIViewController.class] && BHTIsConversationController((UIViewController*)responder)) {
+            post = (UIViewController*)responder;
+        }
+    }
+    if (!BHTIsManagedPost(post)) return inset;
+    CGFloat safeTop = post.view.safeAreaInsets.top;
+    if (inset.top <= safeTop + 1.0) return inset;
+    inset.top = safeTop;
+    __weak UIScrollView* weakTable = table;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIScrollView* strong = weakTable;
+        // Scrolled above the content's top (the old padding showing): move to the top.
+        if (strong && !strong.isTracking && !strong.isDecelerating &&
+            strong.contentOffset.y < -strong.contentInset.top - 1.0) {
+            strong.contentOffset = CGPointMake(strong.contentOffset.x, -strong.contentInset.top);
+        }
+    });
+    return inset;
+}
+
+// iOS 26's own scroll-edge effect at the top of lists (runtime API: this builds
+// against an older SDK). Hidden with Liquid Glass, like X's top fade.
+void BHTHideTopEdgeEffect(UIScrollView* scroll) {
+    if (!NFBLiquidGlassEnabled()) return;
+    SEL topEffect = NSSelectorFromString(@"topEdgeEffect");
+    if (![scroll respondsToSelector:topEffect]) return;
+    id effect = ((id (*)(id, SEL))objc_msgSend)(scroll, topEffect);
+    SEL setHidden = NSSelectorFromString(@"setHidden:");
+    if ([effect respondsToSelector:setHidden]) ((void (*)(id, SEL, BOOL))objc_msgSend)(effect, setHidden, YES);
+}
+
 BOOL BHTPostOwnsTopInset(UIViewController* controller) {
     if (BHTIsManagedPost(controller)) return YES;
     return [controller isKindOfClass:UINavigationController.class] &&
