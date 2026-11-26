@@ -833,6 +833,12 @@ static void BHTPlaceColumn(UIView* column, CGRect frame) {
     %orig(hidden || BHTIsPostChrome((UIView*)self));
 }
 
+// X's override answers taps even while hidden (the header's tap-to-scroll-to-top
+// stole taps on the post's author), so hidden means hidden here too.
+- (UIView*)hitTest:(CGPoint)point withEvent:(UIEvent*)event {
+    return ((UIView*)self).hidden ? nil : %orig;
+}
+
 %end
 
 %hook _TtC11XNavigation20ChromeBackgroundView
@@ -849,6 +855,12 @@ static void BHTPlaceColumn(UIView* column, CGRect frame) {
 
 - (void)setHidden:(BOOL)hidden {
     %orig(hidden || BHTIsPostChrome((UIView*)self));
+}
+
+// X's override answers taps even while hidden (the header's tap-to-scroll-to-top
+// stole taps on the post's author), so hidden means hidden here too.
+- (UIView*)hitTest:(CGPoint)point withEvent:(UIEvent*)event {
+    return ((UIView*)self).hidden ? nil : %orig;
 }
 
 %end

@@ -1422,6 +1422,12 @@ static const CGFloat BHTGlassTabRailPadding = 8.0;
 @property (nonatomic, strong) UIButton* composeButton;
 // The system put the bar in the vertical side strip (where compose sits on top).
 @property (nonatomic) BOOL railLayout;
+// X's side menu slides the page: full-window views above X's bar, watched for moves.
+@property (nonatomic, strong) NSArray<CALayer*>* slideLayers;
+@property (nonatomic, weak) UIView* slider;
+@property (nonatomic, strong) UIView* slideSnapshot;
+@property (nonatomic, strong) CADisplayLink* settleLink;
+@property (nonatomic) CFTimeInterval settleStart;
 - (void)layoutCompose;
 @end
 
@@ -1684,52 +1690,116 @@ static UIViewController* BHTTopControllerForView(UIView* view) {
     return controller;
 }
 
-// The first view above X's bar that covers the whole window. X's side menu slides
-// the page by moving a view like this, so the bar moves with it; it still covers
-// the side strip, which iOS needs in order to put the bar there (X's own tab view
-// stops at the strip).
-static UIView* BHTFullWindowAncestor(UIView* view, UIView* fallback) {
-    CGSize size = view.window.bounds.size;
-    for (UIView* ancestor = view.superview; ancestor && ancestor != fallback; ancestor = ancestor.superview) {
-        if (CGRectGetWidth(ancestor.bounds) >= size.width - 1.0 && CGRectGetHeight(ancestor.bounds) >= size.height - 1.0) {
-            return ancestor;
-        }
-    }
-    return fallback;
-}
-
 - (void)attach {
-    UIViewController* top = BHTTopControllerForView(self.bar);
-    if (!top.isViewLoaded) return;
-    UIView* host = BHTFullWindowAncestor(self.bar, top.view);
-    // UIKit requires a child's view inside its parent's own view (else it aborts with
-    // a hierarchy inconsistency), so the parent is the controller that owns `host`.
-    UIViewController* parent = top;
-    for (UIResponder* responder = host; responder; responder = responder.nextResponder) {
-        if ([responder isKindOfClass:UIViewController.class]) {
-            parent = (UIViewController*)responder;
-            break;
-        }
-    }
+    UIViewController* parent = BHTTopControllerForView(self.bar);
+    if (!parent.isViewLoaded) return;
     UITabBarController* controller = self.controller;
-    if (controller.parentViewController != parent || self.container.superview != host) {
+    if (controller.parentViewController != parent) {
         [self detach];
         [parent addChildViewController:controller];
-        self.container.frame = host.bounds;
-        self.container.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-        [host addSubview:self.container];
+        self.container.frame = parent.view.bounds;
+        [parent.view addSubview:self.container];
         controller.view.frame = self.container.bounds;
         controller.view.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
         controller.view.backgroundColor = UIColor.clearColor;
         [self.container addSubview:controller.view];
         [controller didMoveToParentViewController:parent];
     }
-    if (host.subviews.lastObject != self.container) [host bringSubviewToFront:self.container];
+    if (parent.view.subviews.lastObject != self.container) [parent.view bringSubviewToFront:self.container];
+    [self watchSlidesUnder:parent.view];
     BHTActiveNativeHost = self;
+}
+
+// MARK: Following X's side menu
+
+// The real bar can't move with the page: iOS re-lays it out (horizontal, or mid
+// screen) as its safe area changes. So while the page is slid away, the bar is
+// faded out and a still image of it rides on the page instead.
+
+static char BHTSlideContext;
+
+// The full-window views between X's bar and the root, nearest first. X's side menu
+// moves one of them (by position, transform or a scroll offset).
+- (void)watchSlidesUnder:(UIView*)root {
+    NSMutableArray<CALayer*>* layers = [NSMutableArray new];
+    UIView* nearest = nil;
+    CGSize size = self.bar.window.bounds.size;
+    for (UIView* view = self.bar.superview; view && view != root; view = view.superview) {
+        if (CGRectGetWidth(view.bounds) < size.width - 1.0 || CGRectGetHeight(view.bounds) < size.height - 1.0) continue;
+        if (!nearest) nearest = view;
+        [layers addObject:view.layer];
+    }
+    if ([layers isEqualToArray:self.slideLayers ?: @[]]) return;
+    [self unwatchSlides];
+    for (CALayer* layer in layers)
+        for (NSString* key in @[@"position", @"transform", @"bounds"])
+            [layer addObserver:self forKeyPath:key options:0 context:&BHTSlideContext];
+    self.slideLayers = layers;
+    self.slider = nearest;
+}
+
+- (void)dealloc {
+    [self unwatchSlides];
+}
+
+- (void)unwatchSlides {
+    for (CALayer* layer in self.slideLayers)
+        for (NSString* key in @[@"position", @"transform", @"bounds"])
+            [layer removeObserver:self forKeyPath:key context:&BHTSlideContext];
+    self.slideLayers = nil;
+    [self endSlide];
+}
+
+- (void)observeValueForKeyPath:(NSString*)keyPath
+                      ofObject:(id)object
+                        change:(NSDictionary*)change
+                       context:(void*)context {
+    if (context != &BHTSlideContext) {
+        [super observeValueForKeyPath:keyPath ofObject:object change:change context:context];
+        return;
+    }
+    UIView* slider = self.slider;
+    if (!slider.window) return;
+    CGRect rect = [slider convertRect:slider.bounds toView:nil];
+    BOOL away = fabs(CGRectGetMinX(rect)) > 0.5 || fabs(CGRectGetMinY(rect)) > 0.5;
+    if (away) {
+        [self.settleLink invalidate];
+        self.settleLink = nil;
+        if (!self.slideSnapshot && !self.container.hidden && self.container.alpha > 0.0) {
+            UIView* snapshot = [self.container snapshotViewAfterScreenUpdates:NO];
+            if (!snapshot) return;
+            snapshot.frame = slider.bounds;
+            snapshot.userInteractionEnabled = NO;
+            [slider addSubview:snapshot];
+            self.slideSnapshot = snapshot;
+            self.container.alpha = 0.0;
+        }
+    } else if (self.slideSnapshot && !self.settleLink) {
+        // Back in place: keep the image until the page is drawn there too.
+        self.settleStart = CACurrentMediaTime();
+        self.settleLink = [CADisplayLink displayLinkWithTarget:self selector:@selector(settleSlide:)];
+        [self.settleLink addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
+    }
+}
+
+- (void)settleSlide:(CADisplayLink*)link {
+    CALayer* shown = self.slideSnapshot.layer.presentationLayer;
+    CGRect rect = shown ? [shown convertRect:shown.bounds toLayer:nil] : CGRectZero;
+    BOOL home = fabs(CGRectGetMinX(rect)) < 0.5 && fabs(CGRectGetMinY(rect)) < 0.5;
+    if (home || CACurrentMediaTime() - self.settleStart > 1.5) [self endSlide];
+}
+
+- (void)endSlide {
+    [self.settleLink invalidate];
+    self.settleLink = nil;
+    [self.slideSnapshot removeFromSuperview];
+    self.slideSnapshot = nil;
+    self.container.alpha = 1.0;
 }
 
 - (void)detach {
     if (BHTActiveNativeHost == self) BHTActiveNativeHost = nil;
+    [self unwatchSlides];
     self.railLayout = NO;
     BHTReapplyTabChildSafeAreaInsets(self.bar);
     for (UIView* button in BHTFloatingButtons().allObjects)

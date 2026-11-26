@@ -175,8 +175,13 @@ static BOOL BHTIsManagedPost(UIViewController* controller) {
            objc_getAssociatedObject(controller, &BHTConversationBarKey);
 }
 
+// A managed post is on top, or is still on screen while being pushed/popped away.
+static BOOL BHTNavigationShowsManagedPost(UINavigationController* navigation) {
+    if (BHTIsManagedPost(navigation.topViewController)) return YES;
+    return BHTIsManagedPost([navigation.transitionCoordinator viewControllerForKey:UITransitionContextFromViewControllerKey]);
+}
+
 static NSHashTable<UIView*>* BHTHiddenBackButtons(void);
-static NSHashTable<UIView*>* BHTMutedHeaders(void);
 
 // X pads its post table by hand (no automatic insets) and re-pads it as the
 // post loads (78, later 122) to clear the header the tweak hides. Cap the top
@@ -242,7 +247,7 @@ BOOL BHTIsPostBackButton(UIView* button) {
     if (![labels containsObject:label]) return NO;
     for (UIResponder* responder = button.nextResponder; responder; responder = responder.nextResponder) {
         if ([responder isKindOfClass:UINavigationController.class]) {
-            return BHTIsManagedPost(((UINavigationController*)responder).topViewController);
+            return BHTNavigationShowsManagedPost((UINavigationController*)responder);
         }
     }
     return NO;
@@ -328,8 +333,7 @@ NSString* BHTPostLayoutReport(UIWindow* screenWindow) {
     } else {
         [report appendString:@"No post showing.\n"];
     }
-    [report appendFormat:@"Muted headers %lu, tweak-hidden %lu\n", (unsigned long)BHTMutedHeaders().count,
-                         (unsigned long)BHTHiddenBackButtons().count];
+    [report appendFormat:@"Tweak-hidden %lu\n", (unsigned long)BHTHiddenBackButtons().count];
     [report appendString:@"\nTaps at x=60:\n"];
     for (CGFloat y = 60.0; y <= 220.0; y += 40.0) {
         UIView* hit = [window hitTest:CGPointMake(60.0, y) withEvent:nil];
@@ -339,7 +343,7 @@ NSString* BHTPostLayoutReport(UIWindow* screenWindow) {
                                  hit.gestureRecognizers.count
                                      ? [NSString stringWithFormat:@"(%lu gr)", (unsigned long)hit.gestureRecognizers.count]
                                      : @"",
-                                 [BHTMutedHeaders() containsObject:hit] ? @"(muted)" : @""];
+                                 hit.hidden ? @" hidden" : @""];
         }
         [report appendString:@"\n"];
     }
@@ -392,17 +396,30 @@ void BHTConversationWillDisappear(UIViewController* conversation, BOOL animated)
     NSNumber* previous = objc_getAssociatedObject(conversation, &BHTConversationBarKey);
     // Post to post keeps the bar hidden; anything else gets back what it had.
     if (!previous || !navigation || BHTIsConversationController(navigation.topViewController)) return;
-    objc_setAssociatedObject(conversation, &BHTConversationBarKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     [navigation setNavigationBarHidden:previous.boolValue animated:animated];
-    BHTReapplySafeAreaInsets(conversation);
     BHTReapplySafeAreaInsets(navigation);
-    // Other screens keep X's floating back button.
-    for (UIView* button in BHTHiddenBackButtons().allObjects)
-        button.hidden = NO;
-    [BHTHiddenBackButtons() removeAllObjects];
-    for (UIView* view in BHTMutedHeaders().allObjects)
-        view.userInteractionEnabled = YES;
-    [BHTMutedHeaders() removeAllObjects];
+    // X's header and back buttons come back once the post is off screen (not if the
+    // swipe is cancelled): restoring them now drew "Post" and a back button over the
+    // post while it slid away.
+    __weak UIViewController* weakPost = conversation;
+    void (^restore)(void) = ^{
+        UIViewController* post = weakPost;
+        if (post) {
+            objc_setAssociatedObject(post, &BHTConversationBarKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            BHTReapplySafeAreaInsets(post);
+        }
+        for (UIView* button in BHTHiddenBackButtons().allObjects)
+            button.hidden = NO;
+        [BHTHiddenBackButtons() removeAllObjects];
+    };
+    id<UIViewControllerTransitionCoordinator> transition = navigation.transitionCoordinator;
+    if (transition && [transition animateAlongsideTransition:nil
+                                                  completion:^(id<UIViewControllerTransitionCoordinatorContext> context) {
+                                                      if (!context.isCancelled) restore();
+                                                  }]) {
+        return;
+    }
+    restore();
 }
 
 // X shows its own floating glass back button over a post once the bar is
@@ -414,28 +431,10 @@ static NSHashTable<UIView*>* BHTHiddenBackButtons(void) {
     return buttons;
 }
 
-static NSHashTable<UIView*>* BHTMutedHeaders(void) {
-    static NSHashTable<UIView*>* views;
-    if (!views) views = [NSHashTable weakObjectsHashTable];
-    return views;
-}
-
 static void BHTHideForPost(UIView* view) {
     if (view.hidden) return;
     view.hidden = YES;
     [BHTHiddenBackButtons() addObject:view];
-}
-
-// The hidden header's header-sized containers still caught taps over the top of
-// the post (X's tap-to-scroll-to-top), so the author's name couldn't be tapped.
-// ponytail: header-sized = up to 200pt tall; anything taller is the screen.
-static void BHTMuteHeaderContainers(UIView* chrome) {
-    for (UIView* view = chrome.superview; view && view.superview && CGRectGetHeight(view.bounds) <= 200.0;
-         view = view.superview) {
-        if ([view isKindOfClass:UIScrollView.class] || !view.userInteractionEnabled) break;
-        view.userInteractionEnabled = NO;
-        [BHTMutedHeaders() addObject:view];
-    }
 }
 
 // Hides a post's back button with its glass circle (the largest ancestor that
@@ -467,8 +466,7 @@ BOOL BHTIsPostChrome(UIView* view) {
     if (!NFBLiquidGlassEnabled() || !view.window) return NO;
     for (UIResponder* responder = view.nextResponder; responder; responder = responder.nextResponder) {
         if ([responder isKindOfClass:UINavigationController.class]) {
-            UIViewController* top = ((UINavigationController*)responder).topViewController;
-            return BHTIsConversationController(top) && objc_getAssociatedObject(top, &BHTConversationBarKey);
+            return BHTNavigationShowsManagedPost((UINavigationController*)responder);
         }
     }
     return NO;
@@ -477,7 +475,6 @@ BOOL BHTIsPostChrome(UIView* view) {
 void BHTPostChromeChanged(UIView* view) {
     if (!BHTIsPostChrome(view)) return;
     BHTHideForPost(view);
-    BHTMuteHeaderContainers(view);
 }
 
 // X's Liquid Glass post screen has its own collapsing header ("Post" title,
@@ -498,7 +495,6 @@ void BHTNavigationTitleDidLayout(UIView* title) {
         header = view;
     }
     BHTHideForPost(header);
-    BHTMuteHeaderContainers(header);
 }
 
 void BHTConversationDidLayout(UIViewController* conversation) {

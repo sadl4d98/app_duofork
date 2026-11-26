@@ -88,15 +88,17 @@ The portable, app-agnostic version of what's below is the skill
   is showing (matched by accessibility label), along with its ≤80pt glass circle, and restored when
   leaving posts. Every hide goes through `BHTHidePostBackButton` so it's recorded: X reuses the
   button on the next screen, and untracked hides left profiles with no back button or an empty circle.
-- The hidden post header's header-sized (≤200pt) containers still took taps at the top of a post (X's
-  tap-to-scroll-to-top: the scroll bar flashed and the author couldn't be tapped). They get
-  `userInteractionEnabled = NO` while the post is managed (`BHTMuteHeaderContainers`). Unconfirmed;
-  the debug report's "Taps at x=60" lists what the top of the post hit-tests to.
-- The native tab host's view sits in the first full-window view above X's bar
-  (`BHTFullWindowAncestor`), so it slides with the page when X's side menu opens. Its parent is the
-  controller owning that view: a child view placed under another controller's view crashed X on launch
-  (UIKit's view-controller hierarchy inconsistency abort). Making it a child of X's tab controller turned the bar horizontal with an iPad sidebar
-  handle: that view stops at the side strip, and iOS only puts the bar in the strip when it covers it.
+- Taps at the top of a post: X's `XNavigation.NavigationBarView` overrides hitTest and answered taps
+  even while hidden (its tap-to-scroll-to-top bounced the post instead of opening the author; the debug
+  report's "Taps at x=60" showed it). Its hitTest (and ChromeBackgroundView's) returns nil when hidden.
+- Leaving a post: X's header and back buttons are restored in the transition's completion (not if
+  cancelled), and `BHTNavigationShowsManagedPost` also counts the transition's from-controller, so the
+  "Post" header doesn't reappear over the post as it slides away.
+- Side menu: the real native bar can't move with the page (iOS re-lays it out, horizontal or mid
+  screen, as its safe area changes). It stays in the root's view; KVO on the full-window views above
+  X's bar (position/transform/bounds) notices the page sliding, then the bar fades out and a snapshot
+  of it rides on the page (`slideSnapshot`), removed once the page is drawn back in place. Hosting the
+  bar inside the sliding view made it horizontal or crashed (UIKit's child-view hierarchy check).
 - The debug report works on any screen: taps at the top (x=60), every "Back" control with its two
   ancestors and subviews (hidden/alpha, "(tweak)" if the tweak hid it), and the top strip.
 - To inspect class names on device: turn on the `flex_twitter` setting (bundled FLEX), then search

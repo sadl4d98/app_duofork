@@ -217,3 +217,16 @@ Order that works, all in one synchronous call:
 5. Split layout: hinge at window midX, end at the strip; swipe back; no extra columns.
 6. Nav bar and back-button hiding on detail pages, forced through `setNavigationBarHidden:`.
 7. Ship behind settings; keep one-time diagnostic alerts in until each forwarding path is proven.
+
+## More lessons (X 12.46)
+
+- Hidden header views can still steal taps: an app's view that overrides `hitTest:withEvent:` may
+  answer even while hidden. Hook its hitTest to return nil when hidden; check with a debug report that
+  hit-tests points at the top of the screen.
+- Restore an app's hidden header/back buttons in the navigation transition's completion (skip if
+  cancelled), and treat the transition's from-controller as still showing, or they flash over the
+  outgoing screen.
+- Don't host the native tab bar inside a view that slides (e.g. a side menu page): its safe area
+  changes as it moves and iOS re-lays the bar out (horizontal or mid-screen). Keep it fixed, watch the
+  sliding views with KVO (position/transform/bounds), and slide a snapshot instead. A child
+  controller's view must sit in its parent controller's own view, or UIKit aborts.
