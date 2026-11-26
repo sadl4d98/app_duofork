@@ -196,8 +196,6 @@ UIEdgeInsets BHTPostTableInset(UIScrollView* table, UIEdgeInsets inset) {
     return inset;
 }
 
-static UIScrollView* BHTLargestScrollView(UIView* view);
-
 // Once, when a post appears: if it opened scrolled into the old header padding,
 // show it from the top. Never while the user is scrolling.
 void BHTConversationDidAppear(UIViewController* conversation) {
@@ -258,7 +256,7 @@ static NSString* BHTInsetsText(UIEdgeInsets insets) {
     return [NSString stringWithFormat:@"t%.0f l%.0f b%.0f r%.0f", insets.top, insets.left, insets.bottom, insets.right];
 }
 
-static UIScrollView* BHTLargestScrollView(UIView* view) {
+UIScrollView* BHTLargestScrollView(UIView* view) {
     UIScrollView* best = nil;
     NSMutableArray<UIView*>* queue = [NSMutableArray arrayWithObject:view];
     while (queue.count) {

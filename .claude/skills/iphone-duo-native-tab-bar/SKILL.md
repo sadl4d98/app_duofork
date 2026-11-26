@@ -130,7 +130,8 @@ Order that works, all in one synchronous call:
   - the host app usually re-lays a list out at the new width in one frame. Instead of animating
     the left column's frame, drive its width from the sliding column's presentation-layer edge with
     a CADisplayLink, so the app re-lays out every frame like a window resize. (A snapshot crossfade
-    works but the ghosting is distracting.)
+    works but the ghosting is distracting.) Step the width (~8pt), call layoutIfNeeded right away,
+    and re-anchor the top visible row's screen position after each step, or the list drifts.
   - when hiding a column until it's scrolled into place, reveal it only after a check that needed
     no correction, not on the first one; late padding or header rows otherwise make it jump.
 - Opening at the first reply instead of a repeat of the post:

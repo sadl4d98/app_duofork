@@ -79,7 +79,9 @@ The portable, app-agnostic version of what's below is the skill
 - X re-lays the timeline out at a new width in one frame (left-aligned when narrow, centred when
   wide). During an open/close, a display link (`followColumnEdge`) sets the timeline's width to the
   sliding column's on-screen edge every frame, so X re-lays it out smoothly like a window resize.
-  A snapshot crossfade was tried first; the user found the ghosting distracting.
+  A snapshot crossfade was tried first; the user found the ghosting distracting. Per-frame resizing
+  sometimes stuttered and drifted, so it steps every 8pt, lays out synchronously, and keeps the top
+  visible row at the same screen position (`resizeTimelineTo:`).
 - The right column is revealed only on a scroll-to-replies check that needed no correction;
   revealing on the first reply found showed it, then jumped once X's padding/sort row settled.
 - With the bar hidden on posts, X draws its own floating glass "Back" button. It's hidden while a post

@@ -11,6 +11,7 @@ BOOL BHTRouteAppendedTweet(UINavigationController* primary, NSArray<UIViewContro
 BHTSplitTweetHostController* BHTMakeTweetColumnHost(UIViewController* content);
 void BHTAttachTweetColumn(T1AppSplitViewController* split, BHTSplitTweetHostController* host);
 UIView* BHTTweetColumnAppView(BHTSplitTweetHostController* host);
+UIScrollView* BHTLargestScrollView(UIView* view);
 void BHTLayoutTweetColumnChrome(BHTSplitTweetHostController* host);
 BOOL BHTSplitColumnBarHidden(UINavigationController* navigation, BOOL hidden);
 void BHTMarkScrollToReplies(UIViewController* conversation, UIView* column);

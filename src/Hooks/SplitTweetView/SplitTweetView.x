@@ -128,6 +128,9 @@ static void BHTPlaceColumn(UIView* column, CGRect frame) {
         if (host.edgeLink) {
             [host.edgeLink invalidate];
             host.edgeLink = nil;
+            [host resizeTimelineTo:[host sizeForChildContentContainer:host.content
+                                              withParentContainerSize:host.view.bounds.size]
+                                       .width];
             [host.view setNeedsLayout];
             [host.view layoutIfNeeded];
         }
@@ -162,9 +165,8 @@ static void BHTPlaceColumn(UIView* column, CGRect frame) {
     }
 }
 
-// Each frame of an open/close: end the timeline where the sliding column is drawn.
-// ponytail: X re-lays the timeline out every frame; if that stutters, step the width
-// (e.g. every 8pt) instead.
+// Each open/close step: end the timeline where the sliding column is drawn.
+// ponytail: steps of 8pt, since X re-lays the whole timeline out on every change.
 - (void)followColumnEdge {
     CALayer* layer = self.detail.viewIfLoaded.layer;
     CALayer* shown = layer.presentationLayer ?: layer;
@@ -172,11 +174,27 @@ static void BHTPlaceColumn(UIView* column, CGRect frame) {
     CGFloat end = [self columnsEndForWidth:CGRectGetWidth(self.view.bounds) leftWidth:NULL];
     CGFloat divider = 1.0 / MAX(self.view.window.screen.scale, 1.0);
     CGFloat width = round(MIN(end, CGRectGetMinX(shown.frame) - divider));
+    if (width > 0 && fabs(CGRectGetWidth(self.content.view.frame) - width) >= 8.0) [self resizeTimelineTo:width];
+}
+
+// Resizes the timeline now (not on the next pass, which drew a frame late) and keeps
+// its top visible post where it was: posts change height with the width, which
+// otherwise made the list drift up or down mid-resize.
+- (void)resizeTimelineTo:(CGFloat)width {
+    UIScrollView* list = BHTLargestScrollView(self.content.view);
+    UITableView* table = [list isKindOfClass:UITableView.class] && !list.isTracking && !list.isDecelerating
+                             ? (UITableView*)list
+                             : nil;
+    NSIndexPath* row = table.indexPathsForVisibleRows.firstObject;
+    CGFloat before = row ? CGRectGetMinY([table rectForRowAtIndexPath:row]) - table.contentOffset.y : 0.0;
     CGRect frame = self.content.view.frame;
-    if (width <= 0 || fabs(CGRectGetWidth(frame) - width) < 1.0) return;
     frame.size.width = width;
     self.content.view.frame = frame;
     [BHTTweetColumnAppView(self) setNeedsLayout];
+    [self.content.view layoutIfNeeded];
+    if (!row || row.section >= table.numberOfSections || row.row >= [table numberOfRowsInSection:row.section]) return;
+    CGFloat shift = CGRectGetMinY([table rectForRowAtIndexPath:row]) - table.contentOffset.y - before;
+    if (fabs(shift) >= 0.5) table.contentOffset = CGPointMake(table.contentOffset.x, table.contentOffset.y + shift);
 }
 
 - (CGSize)sizeForChildContentContainer:(id<UIContentContainer>)container
