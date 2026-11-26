@@ -70,8 +70,8 @@ strip bar. The pattern that worked: lay a real `UITabBarController` over the app
 - Hide the app's floating compose button **together with its small wrapper**: the largest ancestor that
   is still about button-sized, ≤120pt, which holds the glass circle. Put a glass circle above the strip
   bar instead.
-- Put it on the **platter's** centre line, about 8pt above it, at about 80% of the platter's width (a
-  full-width circle looked too heavy). The strip's centre isn't the
+- Native spacing, measured from the Claude app's Duo rail: round glass buttons are **as wide as the
+  rail**, on its centre line, with **~12pt gaps** (rail and circles 138–140px at 3x, gaps ~37px). The strip's centre isn't the
   bar's centre, and a union-of-views measurement makes it jump and grow during tab switches.
 - Tapping it forwards to the app's current compose button: the newest one in the window that the app
   isn't hiding. Fall back to the app's URL scheme (X: `twitter://post`) when there's none.
@@ -153,6 +153,10 @@ Order that works, all in one synchronous call:
 
 ## 6. Debugging on device
 
+- **Once your own full-screen overlay exists** (the native tab host), FLEX "select" returns it
+  (`BHTPassthroughView` → `UITabBarController` → `_UITabContainerView` → `SwiftUI._UIInheritedView`)
+  wherever you tap. Use the views-list search, or build a debug report into the tweak. NFB:
+  long-press the rail's compose button in Debug mode for insets, top-strip views and "Back" views.
 - **FLEX** (bundled in NFB as Settings → Debug → "Debug mode", key `flex_twitter`):
   - "Select" on a floating button grabs whatever **full-screen layer** is on top (a hidden-looking
     overlay window, or your own pass-through view). Don't trust it for small floating controls.

@@ -47,6 +47,8 @@ void BHTReapplySafeAreaInsets(UIViewController* controller);
 // From SplitTweetView.m: posts the tweak manages (Liquid Glass, header hidden).
 BOOL BHTPostOwnsTopInset(UIViewController* controller);
 BOOL BHTIsPostBackButton(UIView* button);
+// Debug: what the current post screen looks like (insets, top-strip views, back buttons).
+NSString* BHTPostLayoutReport(void);
 void BHTReapplyTabChildSafeAreaInsets(UIView* bar);
 void BHTScheduleGlassTabRailUpdate(UIView* view);
 // X's floating compose button, replaced by a glass button on the native rail.

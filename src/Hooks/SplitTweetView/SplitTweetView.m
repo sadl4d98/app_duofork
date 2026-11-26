@@ -203,9 +203,82 @@ BOOL BHTIsPostBackButton(UIView* button) {
     return NO;
 }
 
+static __weak UIViewController* BHTCurrentPost;
+
+static NSString* BHTRectText(CGRect rect) {
+    return [NSString stringWithFormat:@"(%.0f,%.0f %.0fx%.0f)", rect.origin.x, rect.origin.y, rect.size.width,
+                                      rect.size.height];
+}
+
+static NSString* BHTInsetsText(UIEdgeInsets insets) {
+    return [NSString stringWithFormat:@"t%.0f l%.0f b%.0f r%.0f", insets.top, insets.left, insets.bottom, insets.right];
+}
+
+static UIScrollView* BHTLargestScrollView(UIView* view) {
+    UIScrollView* best = nil;
+    NSMutableArray<UIView*>* queue = [NSMutableArray arrayWithObject:view];
+    while (queue.count) {
+        UIView* current = queue.firstObject;
+        [queue removeObjectAtIndex:0];
+        if ([current isKindOfClass:UIScrollView.class] && !current.hidden &&
+            CGRectGetWidth(current.bounds) * CGRectGetHeight(current.bounds) >
+                CGRectGetWidth(best.bounds) * CGRectGetHeight(best.bounds)) {
+            best = (UIScrollView*)current;
+        }
+        [queue addObjectsFromArray:current.subviews];
+    }
+    return best;
+}
+
+// Views in the top strip (not content, not the tweak's own overlay) and every
+// "Back"-labelled view, with frames in window coordinates.
+static void BHTReportViews(UIView* view, NSMutableString* top, NSMutableString* back, NSUInteger depth) {
+    for (UIView* subview in view.subviews) {
+        NSString* name = NSStringFromClass(subview.class);
+        if ([name hasPrefix:@"BHT"]) continue;
+        CGRect rect = [subview convertRect:subview.bounds toView:nil];
+        NSString* line = [NSString stringWithFormat:@"%@%@ %@%@%@\n", [@"" stringByPaddingToLength:depth withString:@"." startingAtIndex:0], name,
+                                                    BHTRectText(rect), subview.hidden ? @" hidden" : @"",
+                                                    subview.alpha < 0.01 ? @" a0" : @""];
+        if ([subview.accessibilityLabel isEqualToString:@"Back"]) [back appendString:line];
+        BOOL content = [subview isKindOfClass:UIScrollView.class];
+        if (!content && CGRectGetMinY(rect) < 160.0 && CGRectGetHeight(rect) <= 200.0 && CGRectGetWidth(rect) >= 20.0 &&
+            top.length < 3000) {
+            [top appendString:line];
+        }
+        BHTReportViews(subview, content ? nil : top, back, depth + 1);
+    }
+}
+
+NSString* BHTPostLayoutReport(void) {
+    UIViewController* post = BHTCurrentPost;
+    UINavigationController* navigation = post.navigationController;
+    if (!post.viewIfLoaded.window) return nil;
+    NSMutableString* report = [NSMutableString new];
+    [report appendFormat:@"Post %@ additional %@ safe %@\n", NSStringFromClass(post.class),
+                         BHTInsetsText(post.additionalSafeAreaInsets), BHTInsetsText(post.view.safeAreaInsets)];
+    [report appendFormat:@"Nav %@ additional %@ barHidden %d\n", NSStringFromClass(navigation.class),
+                         BHTInsetsText(navigation.additionalSafeAreaInsets), navigation.navigationBarHidden];
+    for (UIViewController* parent = navigation.parentViewController; parent; parent = parent.parentViewController) {
+        [report appendFormat:@"Parent %@ additional %@\n", NSStringFromClass(parent.class),
+                             BHTInsetsText(parent.additionalSafeAreaInsets)];
+    }
+    UIScrollView* scroll = BHTLargestScrollView(post.view);
+    [report appendFormat:@"Scroll %@ %@ inset %@ adjusted %@ behavior %ld\n", NSStringFromClass(scroll.class),
+                         BHTRectText([scroll convertRect:scroll.bounds toView:nil]), BHTInsetsText(scroll.contentInset),
+                         BHTInsetsText(scroll.adjustedContentInset), (long)scroll.contentInsetAdjustmentBehavior];
+    NSMutableString* top = [NSMutableString new];
+    NSMutableString* back = [NSMutableString new];
+    for (UIWindow* window in post.view.window.windowScene.windows)
+        BHTReportViews(window, top, back, 0);
+    [report appendFormat:@"\nBack views:\n%@\nTop strip:\n%@", back.length ? back : @"none\n", top];
+    return report;
+}
+
 void BHTConversationWillAppear(UIViewController* conversation, BOOL animated) {
     UINavigationController* navigation = conversation.navigationController;
     if (!NFBLiquidGlassEnabled() || !navigation) return;
+    BHTCurrentPost = conversation;
     if (!objc_getAssociatedObject(conversation, &BHTConversationBarKey)) {
         // What the bar looked like before this post, restored when leaving posts.
         objc_setAssociatedObject(conversation, &BHTConversationBarKey, @(navigation.navigationBarHidden),

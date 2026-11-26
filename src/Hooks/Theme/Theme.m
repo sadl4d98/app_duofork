@@ -1562,8 +1562,29 @@ static UIImage* BHTFirstImage(UIView* view) {
     _composeButton.tintColor = UIColor.whiteColor;
     _composeButton.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     [_composeButton addTarget:self action:@selector(didTapCompose) forControlEvents:UIControlEventTouchUpInside];
+    // Debug mode: long-press for a report of the post screen's layout.
+    [_composeButton addGestureRecognizer:[[UILongPressGestureRecognizer alloc] initWithTarget:self
+                                                                                       action:@selector(didLongPressCompose:)]];
     [_compose.contentView addSubview:_composeButton];
     return self;
+}
+
+- (void)didLongPressCompose:(UILongPressGestureRecognizer*)press {
+    if (press.state != UIGestureRecognizerStateBegan || ![BHTSettings boolForKey:@"flex_twitter"]) return;
+    NSString* report = BHTPostLayoutReport() ?: @"No post is showing.";
+    UIViewController* top = self.bar.window.rootViewController;
+    while (top.presentedViewController)
+        top = top.presentedViewController;
+    UIAlertController* alert = [UIAlertController alertControllerWithTitle:@"Post layout"
+                                                                   message:report
+                                                            preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:@"Copy"
+                                              style:UIAlertActionStyleDefault
+                                            handler:^(UIAlertAction* action) {
+                                                UIPasteboard.generalPasteboard.string = report;
+                                            }]];
+    [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleCancel handler:nil]];
+    [top presentViewController:alert animated:YES completion:nil];
 }
 
 - (void)didTapCompose {
@@ -1632,10 +1653,10 @@ static void BHTFindStripPlatter(UIView* view, UIView* page, UIView* container, C
                             forState:UIControlStateNormal];
     }
     self.composeButton.accessibilityLabel = floating.accessibilityLabel ?: @"Post";
-    // On the platter's centre line, just above it, a little narrower than the bar
-    // (a full-width circle looked too heavy next to it).
-    CGFloat size = MAX(36.0, MIN(CGRectGetWidth(bar), strip - 8.0) * 0.8);
-    CGRect frame = CGRectMake(CGRectGetMidX(bar) - size / 2.0, CGRectGetMinY(bar) - 8.0 - size, size, size);
+    // Native Duo spacing (measured from the Claude app's rail): a circle as wide as
+    // the rail, on its centre line, 12pt above it.
+    CGFloat size = MAX(36.0, MIN(CGRectGetWidth(bar), strip - 8.0));
+    CGRect frame = CGRectMake(CGRectGetMidX(bar) - size / 2.0, CGRectGetMinY(bar) - 12.0 - size, size, size);
     if (!CGRectEqualToRect(self.compose.frame, frame)) {
         self.compose.frame = frame;
         self.compose.layer.cornerRadius = size / 2.0;
