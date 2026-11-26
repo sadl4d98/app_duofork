@@ -1,5 +1,8 @@
 # Notes for Claude
 
+The portable, app-agnostic version of what's below is the skill
+`.claude/skills/iphone-duo-native-tab-bar/SKILL.md` (copy it to other repos or `~/.claude/skills/`).
+
 ## iPhone Duo: native vertical (right-side) Liquid Glass tab bar
 
 - On iOS 27.1+, the vertical Liquid Glass tab bar on the unfolded iPhone Duo has no separate
