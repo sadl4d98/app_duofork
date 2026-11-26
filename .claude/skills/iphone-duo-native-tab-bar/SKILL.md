@@ -123,6 +123,10 @@ Order that works, all in one synchronous call:
   - on release past 30% or above 600pt/s, either pop inside the column or close it;
   - animate the column open and close with a **critically damped** spring (1.0). A bouncier spring,
     like X's 0.75, makes the remaining column visibly bounce as it re-lays out.
+  - if the back swipe moves the column with a transform, lay it out with bounds/center, never
+    `frame` (a mid-swipe layout offsets it by the translation and it jumps). When the swipe closes
+    the column, hand off to the close spring from the finger's position, so the other column widens
+    during the slide rather than snapping afterwards.
 - Opening at the first reply instead of a repeat of the post:
   - Keep the column invisible, or covered with a spinner (setting), until it's scrolled into place,
     then fade it in. A 2s safety timer always reveals it.

@@ -72,6 +72,10 @@ The portable, app-agnostic version of what's below is the skill
   previous commit.
 - The split column's open/close spring is critically damped (1.0). X's own 0.75 made the timeline
   bounce after a swipe-back close.
+- The back swipe moves the column with a transform, so layout places it with bounds/center
+  (`BHTPlaceColumn`), never `frame`: a layout pass mid-swipe made it jump left over the timeline.
+  A swipe that closes the column hands off to the close spring from where the finger let go, so
+  the timeline widens while the column slides off instead of snapping afterwards.
 - With the bar hidden on posts, X draws its own floating glass "Back" button. It's hidden while a post
   is showing (matched by accessibility label), along with its ≤80pt glass circle, and restored when
   leaving posts.

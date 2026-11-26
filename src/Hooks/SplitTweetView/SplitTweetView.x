@@ -31,6 +31,14 @@
 // For a host `width` wide: where the columns end, and the left column's width.
 // Like iPhone Duo apps, the split sits on the screen's centre line (the hinge)
 // and the right column stops where the side strip by the status bar begins.
+// Sets the column's untransformed frame. Setting `frame` while the back swipe's
+// translation is applied offsets the column by that translation, so a layout pass
+// mid-swipe made it jump left over the timeline.
+static void BHTPlaceColumn(UIView* column, CGRect frame) {
+    column.bounds = (CGRect){column.bounds.origin, frame.size};
+    column.center = CGPointMake(CGRectGetMidX(frame), CGRectGetMidY(frame));
+}
+
 - (CGFloat)columnsEndForWidth:(CGFloat)width leftWidth:(CGFloat*)leftWidth {
     UIView* view = self.viewIfLoaded;
     UIWindow* window = view.window;
@@ -174,14 +182,12 @@
     if (self.detailVisible) {
         self.divider.frame = CGRectMake(leftWidth, 0, dividerWidth, bounds.size.height);
         CGFloat end = [self columnsEndForWidth:bounds.size.width leftWidth:NULL];
-        self.detail.view.frame = CGRectMake(leftWidth + dividerWidth, 0, MAX(0.0, end - leftWidth - dividerWidth),
-                                            bounds.size.height);
+        BHTPlaceColumn(self.detail.view, CGRectMake(leftWidth + dividerWidth, 0,
+                                                    MAX(0.0, end - leftWidth - dividerWidth), bounds.size.height));
     } else if (self.detail.parentViewController == self) {
         // Closing: slide the attached pane past the trailing edge.
-        CGRect frame = self.detail.view.frame;
-        frame.origin.x = bounds.size.width;
-        frame.size.height = bounds.size.height;
-        self.detail.view.frame = frame;
+        BHTPlaceColumn(self.detail.view, CGRectMake(bounds.size.width, 0, CGRectGetWidth(self.detail.view.bounds),
+                                                    bounds.size.height));
         self.divider.frame = CGRectMake(bounds.size.width, 0, dividerWidth, bounds.size.height);
     }
     [BHTTweetState(self) scheduleUpdate];
@@ -301,6 +307,17 @@
         case UIGestureRecognizerStateFailed: {
             BOOL back = pan.state == UIGestureRecognizerStateEnded &&
                         (x > width * 0.3 || [pan velocityInView:column].x > 600.0);
+            if (back && self.glassHost && self.detail.viewControllers.count <= 1) {
+                // Closing the column: one motion from where the finger left it, so
+                // the timeline widens while the column slides off instead of after.
+                CGPoint center = column.center;
+                center.x += column.transform.tx;
+                column.transform = CGAffineTransformIdentity;
+                column.center = center;
+                self.swiping = NO;
+                [self closeDetail:nil];
+                break;
+            }
             __weak BHTSplitTweetState* weakSelf = self;
             [UIView animateWithDuration:0.22
                 delay:0
