@@ -1629,8 +1629,11 @@ static void BHTAddStripViews(UIView* view, UIView* page, UIView* container, CGFl
                             forState:UIControlStateNormal];
     }
     self.composeButton.accessibilityLabel = floating.accessibilityLabel ?: @"Post";
-    CGFloat size = MIN(MIN(CGRectGetWidth(bar), strip - 8.0), 56.0);
-    CGRect frame = CGRectMake(CGRectGetMidX(bar) - size / 2.0, CGRectGetMinY(bar) - 12.0 - size, size, size);
+    // Sized and centred by the strip, which is steady; the bar's own width
+    // changes while it animates between tabs.
+    CGFloat size = MIN(strip - 8.0, 52.0);
+    CGFloat centerX = CGRectGetMaxX(container.bounds) - strip / 2.0;
+    CGRect frame = CGRectMake(centerX - size / 2.0, CGRectGetMinY(bar) - 12.0 - size, size, size);
     if (!CGRectEqualToRect(self.compose.frame, frame)) {
         self.compose.frame = frame;
         self.compose.layer.cornerRadius = size / 2.0;

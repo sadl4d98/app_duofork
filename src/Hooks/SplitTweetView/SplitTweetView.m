@@ -101,9 +101,16 @@ void BHTLayoutTweetColumnChrome(BHTSplitTweetHostController* host) {
     [host.content.viewIfLoaded layoutIfNeeded];
 }
 
+static char BHTConversationBarKey;
+
 BOOL BHTSplitColumnBarHidden(UINavigationController* navigation, BOOL hidden) {
+    if (hidden) return YES;
+    // A post keeps the "Post" bar hidden even when X reveals it on scrolling up.
+    UIViewController* top = navigation.topViewController;
+    if (NFBLiquidGlassEnabled() && BHTIsConversationController(top) &&
+        objc_getAssociatedObject(top, &BHTConversationBarKey)) return YES;
     BHTSplitTweetState* state = BHTTweetStateForController(navigation);
-    return hidden || (state && BHTSplitTweetViewEnabled() && navigation == state.detail);
+    return state && BHTSplitTweetViewEnabled() && navigation == state.detail;
 }
 
 // MARK: - Back swipe (shared by the right column and posts in the normal view)
@@ -132,7 +139,6 @@ BOOL BHTBackSwipeBlocksScrolling(UIGestureRecognizer* gesture, UIGestureRecogniz
 
 // MARK: - Posts without the "Post" bar (Liquid Glass)
 
-static char BHTConversationBarKey;
 static char BHTConversationSwipeKey;
 
 @interface BHTConversationSwipe : NSObject <UIGestureRecognizerDelegate>

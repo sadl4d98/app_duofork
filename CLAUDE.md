@@ -35,6 +35,9 @@
   `UIViewReservedRegion` for custom UI. The rail follows this: it is bottom-aligned in the strip
   (`window.safeAreaInsets.right`), and content is only inset (`NFBGlassTabRailNeedsInset`) when there
   is no strip.
+- X reveals the "Post" bar again when scrolling up a post (and after opening one), so
+  `BHTSplitColumnBarHidden` forces it hidden while a post managed by the tweak is on top of its
+  navigation stack. The `setNavigationBarHidden:` hooks on XNAV, T1Tab and TFN all route through it.
 - With the bar hidden on posts, X draws its own floating glass "Back" button. It's hidden while a post
   is showing (matched by accessibility label) and restored when leaving posts.
 - To inspect class names on device: turn on the `flex_twitter` setting (bundled FLEX), then search
