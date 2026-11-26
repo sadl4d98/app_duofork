@@ -1699,9 +1699,18 @@ static UIView* BHTFullWindowAncestor(UIView* view, UIView* fallback) {
 }
 
 - (void)attach {
-    UIViewController* parent = BHTTopControllerForView(self.bar);
-    if (!parent.isViewLoaded) return;
-    UIView* host = BHTFullWindowAncestor(self.bar, parent.view);
+    UIViewController* top = BHTTopControllerForView(self.bar);
+    if (!top.isViewLoaded) return;
+    UIView* host = BHTFullWindowAncestor(self.bar, top.view);
+    // UIKit requires a child's view inside its parent's own view (else it aborts with
+    // a hierarchy inconsistency), so the parent is the controller that owns `host`.
+    UIViewController* parent = top;
+    for (UIResponder* responder = host; responder; responder = responder.nextResponder) {
+        if ([responder isKindOfClass:UIViewController.class]) {
+            parent = (UIViewController*)responder;
+            break;
+        }
+    }
     UITabBarController* controller = self.controller;
     if (controller.parentViewController != parent || self.container.superview != host) {
         [self detach];

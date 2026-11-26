@@ -92,9 +92,10 @@ The portable, app-agnostic version of what's below is the skill
   tap-to-scroll-to-top: the scroll bar flashed and the author couldn't be tapped). They get
   `userInteractionEnabled = NO` while the post is managed (`BHTMuteHeaderContainers`). Unconfirmed;
   the debug report's "Taps at x=60" lists what the top of the post hit-tests to.
-- The native tab host stays a child of the root controller, but its view sits in the first
-  full-window view above X's bar (`BHTFullWindowAncestor`), so it slides with the page when X's side
-  menu opens. Making it a child of X's tab controller turned the bar horizontal with an iPad sidebar
+- The native tab host's view sits in the first full-window view above X's bar
+  (`BHTFullWindowAncestor`), so it slides with the page when X's side menu opens. Its parent is the
+  controller owning that view: a child view placed under another controller's view crashed X on launch
+  (UIKit's view-controller hierarchy inconsistency abort). Making it a child of X's tab controller turned the bar horizontal with an iPad sidebar
   handle: that view stops at the side strip, and iOS only puts the bar in the strip when it covers it.
 - The debug report works on any screen: taps at the top (x=60), every "Back" control with its two
   ancestors and subviews (hidden/alpha, "(tweak)" if the tweak hid it), and the top strip.
