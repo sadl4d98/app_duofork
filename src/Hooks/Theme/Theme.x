@@ -444,7 +444,7 @@ static BOOL updatingTabIconColor = NO;
 - (void)setHidden:(BOOL)hidden {
     if (BHTIsComposeButton((UIView*)self)) hidden = BHTFloatingButtonHiddenRequest((UIView*)self, hidden);
     // Hidden with its glass circle when it has one, else on its own.
-    if (!hidden && BHTIsPostBackButton((UIView*)self)) hidden = BHTHidePostBackButton((UIView*)self) == self;
+    if (!hidden && BHTIsPostBackButton((UIView*)self)) hidden = BHTHidePostBackButton((UIView*)self) == (UIView*)self;
     %orig(hidden);
 }
 
