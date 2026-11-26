@@ -58,8 +58,11 @@ strip bar. The pattern that worked: lay a real `UITabBarController` over the app
    switches back to horizontal.
 6. **"Is the bar vertical right now?"** Don't ask `tabBar`, because the Duo strip bar isn't drawn by
    `tabBar`. A rule that matched device behaviour: the window is landscape, or portrait narrower than
-   ~560pt (the outer screen), **and** `safeAreaInsets.right >= 44`. To find the drawn bar, take the
-   union of the tab controller's visible views that sit inside the strip (minX ≥ window maxX − strip).
+   ~560pt (the outer screen), **and** `safeAreaInsets.right >= 44`. To locate the drawn bar, take the
+   **largest** visible view of the tab controller inside the strip (minX ≥ window maxX − strip): that's
+   the bar's background platter. Don't take the union of every view in the strip, because the
+   selection highlight bulges out while it slides between tabs and anything aligned to the union
+   jumps.
 7. **Setting.** Keep a toggle back to the app's own bar, or a fallback, while iterating.
 
 ### Glass compose button on top of the rail
@@ -67,8 +70,8 @@ strip bar. The pattern that worked: lay a real `UITabBarController` over the app
 - Hide the app's floating compose button **together with its small wrapper**: the largest ancestor that
   is still about button-sized, ≤120pt, which holds the glass circle. Put a glass circle above the strip
   bar instead.
-- Size and centre it from the **strip**. Sizing from the bar's width makes it grow and shrink while the
-  bar animates between tabs. In X it's 52pt, centred in the strip, 12pt above the bar.
+- Give it the **platter's** width and centre line, about 10pt above it. The strip's centre isn't the
+  bar's centre, and a union-of-views measurement makes it jump and grow during tab switches.
 - Tapping it forwards to the app's current compose button: the newest one in the window that the app
   isn't hiding. Fall back to the app's URL scheme (X: `twitter://post`) when there's none.
 - Glass on SDKs older than 26: `NSClassFromString(@"UIGlassEffect")` with `+effectWithStyle:0`, and call
@@ -132,9 +135,13 @@ Order that works, all in one synchronous call:
 - **Force it hidden.** Apps reveal the bar again on scroll-up and after loading, so hook
   `setNavigationBarHidden:animated:` on every navigation controller class they use (X: XNAV, T1Tab,
   TFN). Return YES while a managed page is on top.
-- **Floating back buttons.** Glass designs draw their own floating "Back" button once the bar is hidden.
-  Hide UIControls labelled "Back" (also UIKit's localized "Back") outside scroll views, and un-hide them
-  when leaving.
+- **The app's own header.** Glass designs often add a collapsing header of their own (title plus glass
+  back button) on top of UINavigationBar. It shows at the top and on scroll-up, and hiding
+  UINavigationBar doesn't touch it. Hook the title view class (X: `XNavigation.NavigationBarTitleView`)
+  and hide its tallest bar-sized ancestor (≤160pt, stop at scroll views) while a managed page is on top.
+- **Floating back buttons.** Hide UIControls labelled "Back" (also UIKit's localized "Back") outside
+  scroll views, **with their glass circle** (the largest ≤80pt ancestor). Hiding only the control
+  leaves an empty circle that still catches taps. Un-hide everything when leaving.
 - Add a right-swipe pop on those pages, because hiding the bar can disable UIKit's edge swipe.
 
 ## 6. Debugging on device
