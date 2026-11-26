@@ -170,6 +170,39 @@ static char BHTConversationSwipeKey;
 
 @end
 
+static BOOL BHTIsManagedPost(UIViewController* controller) {
+    return NFBLiquidGlassEnabled() && BHTIsConversationController(controller) &&
+           objc_getAssociatedObject(controller, &BHTConversationBarKey);
+}
+
+BOOL BHTPostOwnsTopInset(UIViewController* controller) {
+    if (BHTIsManagedPost(controller)) return YES;
+    return [controller isKindOfClass:UINavigationController.class] &&
+           BHTIsManagedPost(((UINavigationController*)controller).topViewController);
+}
+
+// X's glass back buttons are XDSButtons; one also floats in once a post is
+// scrolled down. On a managed post, any of them labelled "Back" stays hidden.
+BOOL BHTIsPostBackButton(UIView* button) {
+    NSString* label = button.accessibilityLabel;
+    if (!label.length || !NFBLiquidGlassEnabled()) return NO;
+    static NSSet<NSString*>* labels;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        NSString* uikit = [[NSBundle bundleForClass:UIApplication.class] localizedStringForKey:@"Back"
+                                                                                         value:@"Back"
+                                                                                         table:nil];
+        labels = [NSSet setWithObjects:@"Back", uikit, nil];
+    });
+    if (![labels containsObject:label]) return NO;
+    for (UIResponder* responder = button.nextResponder; responder; responder = responder.nextResponder) {
+        if ([responder isKindOfClass:UINavigationController.class]) {
+            return BHTIsManagedPost(((UINavigationController*)responder).topViewController);
+        }
+    }
+    return NO;
+}
+
 void BHTConversationWillAppear(UIViewController* conversation, BOOL animated) {
     UINavigationController* navigation = conversation.navigationController;
     if (!NFBLiquidGlassEnabled() || !navigation) return;
@@ -179,6 +212,9 @@ void BHTConversationWillAppear(UIViewController* conversation, BOOL animated) {
                                  OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
     [navigation setNavigationBarHidden:YES animated:animated];
+    // Drop X's room for its (hidden) header now that the post is managed.
+    BHTReapplySafeAreaInsets(conversation);
+    BHTReapplySafeAreaInsets(navigation);
     if (!objc_getAssociatedObject(conversation, &BHTConversationSwipeKey)) {
         // ponytail: not interactive; the pop animates once the swipe ends.
         BHTConversationSwipe* swipe = [BHTConversationSwipe new];
@@ -200,6 +236,8 @@ void BHTConversationWillDisappear(UIViewController* conversation, BOOL animated)
     if (!previous || !navigation || BHTIsConversationController(navigation.topViewController)) return;
     objc_setAssociatedObject(conversation, &BHTConversationBarKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     [navigation setNavigationBarHidden:previous.boolValue animated:animated];
+    BHTReapplySafeAreaInsets(conversation);
+    BHTReapplySafeAreaInsets(navigation);
     // Other screens keep X's floating back button.
     for (UIView* button in BHTHiddenBackButtons().allObjects)
         button.hidden = NO;

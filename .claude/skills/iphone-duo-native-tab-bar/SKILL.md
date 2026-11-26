@@ -70,7 +70,8 @@ strip bar. The pattern that worked: lay a real `UITabBarController` over the app
 - Hide the app's floating compose button **together with its small wrapper**: the largest ancestor that
   is still about button-sized, ≤120pt, which holds the glass circle. Put a glass circle above the strip
   bar instead.
-- Give it the **platter's** width and centre line, about 10pt above it. The strip's centre isn't the
+- Put it on the **platter's** centre line, about 8pt above it, at about 80% of the platter's width (a
+  full-width circle looked too heavy). The strip's centre isn't the
   bar's centre, and a union-of-views measurement makes it jump and grow during tab switches.
 - Tapping it forwards to the app's current compose button: the newest one in the window that the app
   isn't hiding. Fall back to the app's URL scheme (X: `twitter://post`) when there's none.
@@ -139,6 +140,12 @@ Order that works, all in one synchronous call:
   back button) on top of UINavigationBar. It shows at the top and on scroll-up, and hiding
   UINavigationBar doesn't touch it. Hook the title view class (X: `XNavigation.NavigationBarTitleView`)
   and hide its tallest bar-sized ancestor (≤160pt, stop at scroll views) while a managed page is on top.
+  Hiding it leaves an empty strip, because the app still reserves room for it. Zero the top of
+  `additionalSafeAreaInsets` for the page and its navigation controller, storing and reapplying the
+  app's value, the same way as the tab bar's bottom inset.
+- **Back buttons can come back.** A second floating back button may appear only after scrolling down.
+  Hook the glass button class itself (X: `XDSButton`) and keep any one labelled "Back" hidden while a
+  managed page is on top. A one-off view-tree scan misses it.
 - **Floating back buttons.** Hide UIControls labelled "Back" (also UIKit's localized "Back") outside
   scroll views, **with their glass circle** (the largest ≤80pt ancestor). Hiding only the control
   leaves an empty circle that still catches taps. Un-hide everything when leaving.

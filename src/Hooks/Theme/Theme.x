@@ -421,15 +421,18 @@ static BOOL updatingTabIconColor = NO;
 - (void)didMoveToWindow {
     %orig;
     BHTXDSButtonChanged((UIView*)self);
+    if (BHTIsPostBackButton((UIView*)self)) ((UIView*)self).hidden = YES;
 }
 
 - (void)layoutSubviews {
     %orig;
     if (!BHTIsComposeButton((UIView*)self)) BHTXDSButtonChanged((UIView*)self);
+    if (!((UIView*)self).hidden && BHTIsPostBackButton((UIView*)self)) ((UIView*)self).hidden = YES;
 }
 
 - (void)setHidden:(BOOL)hidden {
-    %orig(BHTIsComposeButton((UIView*)self) ? BHTFloatingButtonHiddenRequest((UIView*)self, hidden) : hidden);
+    if (BHTIsComposeButton((UIView*)self)) hidden = BHTFloatingButtonHiddenRequest((UIView*)self, hidden);
+    %orig(hidden || BHTIsPostBackButton((UIView*)self));
 }
 
 %end

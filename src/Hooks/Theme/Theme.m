@@ -1632,9 +1632,10 @@ static void BHTFindStripPlatter(UIView* view, UIView* page, UIView* container, C
                             forState:UIControlStateNormal];
     }
     self.composeButton.accessibilityLabel = floating.accessibilityLabel ?: @"Post";
-    // Same width and centre line as the bar's platter, just above it.
-    CGFloat size = MAX(36.0, MIN(CGRectGetWidth(bar), strip - 8.0));
-    CGRect frame = CGRectMake(CGRectGetMidX(bar) - size / 2.0, CGRectGetMinY(bar) - 10.0 - size, size, size);
+    // On the platter's centre line, just above it, a little narrower than the bar
+    // (a full-width circle looked too heavy next to it).
+    CGFloat size = MAX(36.0, MIN(CGRectGetWidth(bar), strip - 8.0) * 0.8);
+    CGRect frame = CGRectMake(CGRectGetMidX(bar) - size / 2.0, CGRectGetMinY(bar) - 8.0 - size, size, size);
     if (!CGRectEqualToRect(self.compose.frame, frame)) {
         self.compose.frame = frame;
         self.compose.layer.cornerRadius = size / 2.0;
@@ -1795,11 +1796,21 @@ static BOOL BHTTabBarInSideStrip(UIViewController* controller) {
 
 UIEdgeInsets BHTTabChildSafeAreaInsets(UIViewController* controller, UIEdgeInsets insets) {
     UIViewController* parent = controller.parentViewController;
-    if (!parent || BHTXTabController(parent) != parent) return insets;
+    BOOL tabChild = parent && BHTXTabController(parent) == parent;
+    BOOL post = BHTPostOwnsTopInset(controller);
+    if (!tabChild && !post && !objc_getAssociatedObject(controller, &BHTRequestedSafeAreaKey)) return insets;
+    // X's own value, kept so it can be put back when the layout changes.
     objc_setAssociatedObject(controller, &BHTRequestedSafeAreaKey, [NSValue valueWithUIEdgeInsets:insets],
                              OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    if (BHTTabBarInSideStrip(controller)) insets.bottom = 0.0;
+    if (tabChild && BHTTabBarInSideStrip(controller)) insets.bottom = 0.0;
+    // The top inset is the room for X's post header, which is hidden on posts.
+    if (post) insets.top = 0.0;
     return insets;
+}
+
+void BHTReapplySafeAreaInsets(UIViewController* controller) {
+    NSValue* requested = objc_getAssociatedObject(controller, &BHTRequestedSafeAreaKey);
+    if (requested) controller.additionalSafeAreaInsets = requested.UIEdgeInsetsValue;
 }
 
 void BHTReapplyTabChildSafeAreaInsets(UIView* bar) {
@@ -1807,10 +1818,8 @@ void BHTReapplyTabChildSafeAreaInsets(UIView* bar) {
     for (UIResponder* responder = bar.nextResponder; responder && !owner; responder = responder.nextResponder) {
         if ([responder isKindOfClass:UIViewController.class]) owner = (UIViewController*)responder;
     }
-    for (UIViewController* child in BHTXTabController(owner).childViewControllers) {
-        NSValue* requested = objc_getAssociatedObject(child, &BHTRequestedSafeAreaKey);
-        if (requested) child.additionalSafeAreaInsets = requested.UIEdgeInsetsValue;
-    }
+    for (UIViewController* child in BHTXTabController(owner).childViewControllers)
+        BHTReapplySafeAreaInsets(child);
 }
 
 static void BHTHideReplacedGlassTabBar(UIView* bar) {

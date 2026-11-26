@@ -44,7 +44,12 @@ The portable, app-agnostic version of what's below is the skill
 - Besides UINavigationBar, X's Liquid Glass post screen has its own collapsing header ("Post" title
   and glass back button) that shows at the top and on scroll-up. The tweak hooks
   `_TtC11XNavigation22NavigationBarTitleView` and hides the tallest bar-sized (≤160pt) ancestor of the
-  title while a managed post is on top, restoring it when leaving posts.
+  title while a managed post is on top, restoring it when leaving posts. The header's reserved space
+  is dropped too: the `setAdditionalSafeAreaInsets:` hook zeroes `top` for the managed post and its
+  navigation controller (`BHTPostOwnsTopInset`), reapplied on appear and leave. Unconfirmed: this
+  assumes X reserves the space that way. A second floating back button (an `XDSButton` labelled
+  "Back") appears after scrolling down; the XDSButton hooks keep it hidden on managed posts
+  (`BHTIsPostBackButton`).
 - With the bar hidden on posts, X draws its own floating glass "Back" button. It's hidden while a post
   is showing (matched by accessibility label), along with its ≤80pt glass circle, and restored when
   leaving posts.

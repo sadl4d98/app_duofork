@@ -43,6 +43,10 @@ BOOL BHTGlassTabReplacedNow(UIView* bar);
 void BHTHideGlassTabBarIfReplaced(UIView* bar);
 // Drops X's bottom inset for its (hidden) bar while the bar sits in the side strip.
 UIEdgeInsets BHTTabChildSafeAreaInsets(UIViewController* controller, UIEdgeInsets insets);
+void BHTReapplySafeAreaInsets(UIViewController* controller);
+// From SplitTweetView.m: posts the tweak manages (Liquid Glass, header hidden).
+BOOL BHTPostOwnsTopInset(UIViewController* controller);
+BOOL BHTIsPostBackButton(UIView* button);
 void BHTReapplyTabChildSafeAreaInsets(UIView* bar);
 void BHTScheduleGlassTabRailUpdate(UIView* view);
 // X's floating compose button, replaced by a glass button on the native rail.
