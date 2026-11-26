@@ -432,18 +432,20 @@ static BOOL updatingTabIconColor = NO;
 - (void)didMoveToWindow {
     %orig;
     BHTXDSButtonChanged((UIView*)self);
-    if (BHTIsPostBackButton((UIView*)self)) ((UIView*)self).hidden = YES;
+    if (BHTIsPostBackButton((UIView*)self)) BHTHidePostBackButton((UIView*)self);
 }
 
 - (void)layoutSubviews {
     %orig;
     if (!BHTIsComposeButton((UIView*)self)) BHTXDSButtonChanged((UIView*)self);
-    if (!((UIView*)self).hidden && BHTIsPostBackButton((UIView*)self)) ((UIView*)self).hidden = YES;
+    if (BHTIsPostBackButton((UIView*)self)) BHTHidePostBackButton((UIView*)self);
 }
 
 - (void)setHidden:(BOOL)hidden {
     if (BHTIsComposeButton((UIView*)self)) hidden = BHTFloatingButtonHiddenRequest((UIView*)self, hidden);
-    %orig(hidden || BHTIsPostBackButton((UIView*)self));
+    // Hidden with its glass circle when it has one, else on its own.
+    if (!hidden && BHTIsPostBackButton((UIView*)self)) hidden = BHTHidePostBackButton((UIView*)self) == self;
+    %orig(hidden);
 }
 
 %end

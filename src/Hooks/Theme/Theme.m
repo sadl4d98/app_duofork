@@ -1671,20 +1671,17 @@ static void BHTFindStripPlatter(UIView* view, UIView* page, UIView* container, C
     }
 }
 
-// The top of the view controller chain that shows X's bar (the root, or
-// whatever X presents its main interface in).
-static UIViewController* BHTTopControllerForView(UIView* view) {
-    UIViewController* controller = nil;
+// The controller that owns X's bar (X's tab controller). Hosting the native bar
+// there, not at the root, makes it slide with the page when the side menu opens.
+static UIViewController* BHTOwnerControllerForView(UIView* view) {
     for (UIResponder* responder = view.nextResponder; responder; responder = responder.nextResponder) {
-        if ([responder isKindOfClass:UIViewController.class]) controller = (UIViewController*)responder;
+        if ([responder isKindOfClass:UIViewController.class]) return (UIViewController*)responder;
     }
-    while (controller.parentViewController)
-        controller = controller.parentViewController;
-    return controller;
+    return nil;
 }
 
 - (void)attach {
-    UIViewController* parent = BHTTopControllerForView(self.bar);
+    UIViewController* parent = BHTOwnerControllerForView(self.bar);
     if (!parent.isViewLoaded) return;
     UITabBarController* controller = self.controller;
     if (controller.parentViewController != parent) {

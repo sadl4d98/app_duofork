@@ -309,6 +309,16 @@ NSString* BHTPostLayoutReport(void) {
     [report appendFormat:@"Scroll %@ %@ inset %@ adjusted %@ behavior %ld\n", NSStringFromClass(scroll.class),
                          BHTRectText([scroll convertRect:scroll.bounds toView:nil]), BHTInsetsText(scroll.contentInset),
                          BHTInsetsText(scroll.adjustedContentInset), (long)scroll.contentInsetAdjustmentBehavior];
+    [report appendString:@"\nTaps at x=60:\n"];
+    for (CGFloat y = 60.0; y <= 220.0; y += 40.0) {
+        UIView* hit = [post.view.window hitTest:CGPointMake(60.0, y) withEvent:nil];
+        [report appendFormat:@"y%.0f", y];
+        for (NSUInteger depth = 0; hit && depth < 4; depth++, hit = hit.superview) {
+            [report appendFormat:@" < %@%@", NSStringFromClass(hit.class),
+                                 hit.gestureRecognizers.count ? [NSString stringWithFormat:@"(%lu gr)", (unsigned long)hit.gestureRecognizers.count] : @""];
+        }
+        [report appendString:@"\n"];
+    }
     NSMutableString* top = [NSMutableString new];
     NSMutableString* back = [NSMutableString new];
     for (UIWindow* window in post.view.window.windowScene.windows)
@@ -357,6 +367,9 @@ void BHTConversationWillDisappear(UIViewController* conversation, BOOL animated)
     for (UIView* button in BHTHiddenBackButtons().allObjects)
         button.hidden = NO;
     [BHTHiddenBackButtons() removeAllObjects];
+    for (UIView* view in BHTMutedHeaders().allObjects)
+        view.userInteractionEnabled = YES;
+    [BHTMutedHeaders() removeAllObjects];
 }
 
 // X shows its own floating glass back button over a post once the bar is
@@ -368,22 +381,47 @@ static NSHashTable<UIView*>* BHTHiddenBackButtons(void) {
     return buttons;
 }
 
+static NSHashTable<UIView*>* BHTMutedHeaders(void) {
+    static NSHashTable<UIView*>* views;
+    if (!views) views = [NSHashTable weakObjectsHashTable];
+    return views;
+}
+
 static void BHTHideForPost(UIView* view) {
     if (view.hidden) return;
     view.hidden = YES;
     [BHTHiddenBackButtons() addObject:view];
 }
 
+// The hidden header's header-sized containers still caught taps over the top of
+// the post (X's tap-to-scroll-to-top), so the author's name couldn't be tapped.
+// ponytail: header-sized = up to 200pt tall; anything taller is the screen.
+static void BHTMuteHeaderContainers(UIView* chrome) {
+    for (UIView* view = chrome.superview; view && view.superview && CGRectGetHeight(view.bounds) <= 200.0;
+         view = view.superview) {
+        if ([view isKindOfClass:UIScrollView.class] || !view.userInteractionEnabled) break;
+        view.userInteractionEnabled = NO;
+        [BHTMutedHeaders() addObject:view];
+    }
+}
+
+// Hides a post's back button with its glass circle (the largest ancestor that
+// is still button-sized), recorded so leaving posts shows it again: X reuses
+// the button on the next screen (e.g. a profile), which showed it empty or not at all.
+UIView* BHTHidePostBackButton(UIView* button) {
+    UIView* view = button;
+    while (view.superview && CGRectGetWidth(view.superview.bounds) <= 80.0 &&
+           CGRectGetHeight(view.superview.bounds) <= 80.0)
+        view = view.superview;
+    BHTHideForPost(view);
+    return view;
+}
+
 static void BHTHideFloatingBackButtons(UIView* view, NSSet<NSString*>* labels) {
     for (UIView* subview in view.subviews) {
         if ([subview isKindOfClass:UIScrollView.class]) continue; // content, not chrome
         if ([subview isKindOfClass:UIControl.class] && [labels containsObject:subview.accessibilityLabel]) {
-            // Its glass circle too: the largest ancestor that is still button-sized.
-            UIView* button = subview;
-            while (button.superview && CGRectGetWidth(button.superview.bounds) <= 80.0 &&
-                   CGRectGetHeight(button.superview.bounds) <= 80.0)
-                button = button.superview;
-            BHTHideForPost(button);
+            BHTHidePostBackButton(subview);
             continue;
         }
         BHTHideFloatingBackButtons(subview, labels);
@@ -404,7 +442,9 @@ BOOL BHTIsPostChrome(UIView* view) {
 }
 
 void BHTPostChromeChanged(UIView* view) {
-    if (!view.hidden && BHTIsPostChrome(view)) BHTHideForPost(view);
+    if (!BHTIsPostChrome(view)) return;
+    BHTHideForPost(view);
+    BHTMuteHeaderContainers(view);
 }
 
 // X's Liquid Glass post screen has its own collapsing header ("Post" title,
@@ -425,6 +465,7 @@ void BHTNavigationTitleDidLayout(UIView* title) {
         header = view;
     }
     BHTHideForPost(header);
+    BHTMuteHeaderContainers(header);
 }
 
 void BHTConversationDidLayout(UIViewController* conversation) {

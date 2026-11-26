@@ -86,7 +86,14 @@ The portable, app-agnostic version of what's below is the skill
   revealing on the first reply found showed it, then jumped once X's padding/sort row settled.
 - With the bar hidden on posts, X draws its own floating glass "Back" button. It's hidden while a post
   is showing (matched by accessibility label), along with its ≤80pt glass circle, and restored when
-  leaving posts.
+  leaving posts. Every hide goes through `BHTHidePostBackButton` so it's recorded: X reuses the
+  button on the next screen, and untracked hides left profiles with no back button or an empty circle.
+- The hidden post header's header-sized (≤200pt) containers still took taps at the top of a post (X's
+  tap-to-scroll-to-top: the scroll bar flashed and the author couldn't be tapped). They get
+  `userInteractionEnabled = NO` while the post is managed (`BHTMuteHeaderContainers`). Unconfirmed;
+  the debug report's "Taps at x=60" lists what the top of the post hit-tests to.
+- The native tab host is a child of X's tab controller (the bar's owning controller), not the root,
+  so it slides with the page when X's side menu opens.
 - To inspect class names on device: turn on the `flex_twitter` setting (bundled FLEX), then search
   runtime classes or use the view selector on the tab bar.
 
