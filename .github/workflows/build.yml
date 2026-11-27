@@ -137,6 +137,21 @@ jobs:
         id: x_version
         run: |
           mkdir -p x-ipa
+          # An iCloud Drive share link is a web page; ask CloudKit for the file's URL.
+          if [[ "$IPA_URL" =~ icloud\.com/iclouddrive/([A-Za-z0-9_-]+) ]]; then
+            SHARE_ID="${BASH_REMATCH[1]}"
+            RESOLVED=$(curl -s -X POST -H 'Content-Type: application/json' \
+              --data "{\"shortGUIDs\":[{\"value\":\"$SHARE_ID\"}]}" \
+              https://ckdatabasews.icloud.com/database/1/com.apple.cloudkit/production/public/records/resolve)
+            IPA_URL=$(echo "$RESOLVED" | python3 -c '
+          import json, sys
+          result = json.load(sys.stdin)["results"][0]
+          record = result["rootRecord"]["fields"]
+          url = record["fileContent"]["value"]["downloadURL"]
+          print(url.replace("${f}", "com.atebits.Tweetie2.ipa"))
+          ') || { echo "::error::Couldn't resolve the iCloud link: ${RESOLVED:0:500}"; exit 1; }
+            echo "Resolved the iCloud Drive link."
+          fi
           if [ -n "$IPA_URL" ] && [ "$CACHE_HIT" != "true" ]; then
             if wget "$IPA_URL" --no-verbose -O x-ipa/download.ipa; then
               mv x-ipa/download.ipa x-ipa/com.atebits.Tweetie2.ipa

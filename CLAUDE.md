@@ -159,3 +159,5 @@ The portable, app-agnostic version of what's below is the skill
   (`x-ipa` cache), so after one successful download the URL can be left empty, and an expired URL
   falls back to the cache. Don't commit the IPA (~300MB, over GitHub's 100MB limit, and it's X's app).
   easyfileupload.io links are download pages, not files; catbox.moe (permanent) caps uploads at 200MB.
+  iCloud Drive share links (`icloud.com/iclouddrive/<id>`) are resolved in the workflow through
+  CloudKit's public `records/resolve` endpoint to the file's download URL.
