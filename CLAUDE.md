@@ -105,22 +105,24 @@ The portable, app-agnostic version of what's below is the skill
   bar inside the sliding view made it horizontal or crashed (UIKit's child-view hierarchy check).
   Only a full-size sideways offset counts as a slide, and a window size change (fold/unfold, app
   switching) drops the image: it got stuck showing the old layout's rail mid-screen.
-- Media carousels: X runs them to the list's right edge, which in the single column is the side strip.
-  A UIScrollView layoutSubviews hook (`BHTBleedCarousel`) widens horizontal scrollers inside a
-  `TFNTableView` that starts at the top and ends at the strip by the strip width (lists stop 34pt
-  short of the bottom on the outer screen, so a full-height check never matched), and unclips their ancestors
-  up to the list (restored when the list stops ending at the strip, e.g. in the split). X 12.46's
-  carousel is `TweetMediaAttachments…CarouselScrollView` (a UIScrollView, clips) inside
-  `MultiMediaCarouselView`, matched by class name: its frame is 9pt short of or past the list's edge,
-  so an edge check never matched. The width it was given is stored so X's re-layouts get widened
-  again; paging ones are skipped. The debug report marks widened ones "WIDENED".
+- Media carousels under the rail: tried and removed. X 12.46's carousel is
+  `TweetMediaAttachments…CarouselScrollView` (in `MultiMediaCarouselView`). Widening it broke X's own
+  carousel layout (first image jumped to the screen edge, the second wouldn't scroll into line), and
+  views above the list clip at the column edge anyway; unclipping them would show the next pager page
+  ("Following") under the rail. X's own classic layout gets the bleed by running the list under the
+  strip with the strip as safe area, which the single column can't do (it ends at the strip to keep X's
+  top bar and logo).
+- Gap at the top of the home timeline: with `hide_spaces`, X still sets
+  `THFHomeTimelineItemsViewController.additionalSafeAreaInsets.top` to the Spaces bar's height (64pt)
+  once it loads; HideUI.x zeroes that top while the setting is on.
 - `EnumerateSubviewsRecursively` (HookHelpers) stops 15 levels down and skips hidden views, which is
   above the timeline's cells; the debug report walks views itself.
 - The native bar's container sits directly above the root subview holding X's interface, not at the
   very top: brought to front, it covered X's launch animation.
 - The home timeline's `TFNTableView` sits inside a horizontal `TFNUISwift…PagingCollectionView` (the
   For you / Following pager), so "sideways scroller" checks must look inside the list, not above it.
-- The debug report works on any screen: taps at the top (x=60), sideways scrollers, gestures on the
+- The debug report works on any screen: taps at the top (x=60), sideways scrollers and lists (insets,
+  offset, owning controller), gestures on the
   hit chain at (60,40), every "Back" control with its two
   ancestors and subviews (hidden/alpha, "(tweak)" if the tweak hid it), and the top strip.
 - To inspect class names on device: turn on the `flex_twitter` setting (bundled FLEX), then search

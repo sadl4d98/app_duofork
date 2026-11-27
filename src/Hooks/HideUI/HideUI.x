@@ -351,6 +351,18 @@
 
 %end
 
+// X still reserves the hidden Spaces bar's height (64pt) above the home timeline
+// (Liquid Glass: additionalSafeAreaInsets.top), which showed as an empty gap
+// once the bar loaded.
+%hook THFHomeTimelineItemsViewController
+
+- (void)setAdditionalSafeAreaInsets:(UIEdgeInsets)insets {
+    if ([BHTSettings boolForKey:@"hide_spaces"]) insets.top = 0.0;
+    %orig(insets);
+}
+
+%end
+
 %hook TUIFollowControlCustomScreenshot
 - (void)didMoveToWindow {
     %orig;

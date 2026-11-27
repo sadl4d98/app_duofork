@@ -300,8 +300,6 @@ static void BHTReportViews(UIView* view, NSMutableString* top, NSMutableString* 
     }
 }
 
-static NSHashTable<UIView*>* BHTWidenedCarousels(void);
-
 // Class name without Swift's long private-type prefix.
 static NSString* BHTShortClassName(UIView* view) {
     NSString* name = NSStringFromClass(view.class);
@@ -369,9 +367,8 @@ NSString* BHTPostLayoutReport(UIWindow* screenWindow) {
         BOOL sideways = scroll.contentSize.width > CGRectGetWidth(scroll.bounds) + 1.0;
         if (!sideways && ![NSStringFromClass(scroll.class) isEqualToString:@"TFNTableView"]) continue;
         CGRect rect = [scroll convertRect:scroll.bounds toView:nil];
-        [report appendFormat:@"%@ %@ content %.0fx%.0f clips %d%@", BHTShortClassName(scroll), BHTRectText(rect),
-                             scroll.contentSize.width, scroll.contentSize.height, scroll.clipsToBounds,
-                             [BHTWidenedCarousels() containsObject:scroll] ? @" WIDENED" : @""];
+        [report appendFormat:@"%@ %@ content %.0fx%.0f clips %d", BHTShortClassName(scroll), BHTRectText(rect),
+                             scroll.contentSize.width, scroll.contentSize.height, scroll.clipsToBounds];
         if (!sideways) {
             UIViewController* owner = nil;
             for (UIResponder* responder = scroll.nextResponder; responder && !owner; responder = responder.nextResponder)
@@ -690,82 +687,5 @@ void BHTScrollPastFocalIfNeeded(UIView* focal) {
             BHTRevealColumn(column);
         }
         return;
-    }
-}
-
-// MARK: - Full-width media carousels
-
-// X runs timeline media carousels to the list's right edge. With the list ending
-// at the side strip, they stopped there; like X's own layout, they now run on under
-// the rail to the screen edge (single column only: in the split the left list ends
-// at the hinge).
-
-static NSHashTable<UIView*>* BHTUnclippedViews(void) {
-    static NSHashTable<UIView*>* views;
-    if (!views) views = [NSHashTable weakObjectsHashTable];
-    return views;
-}
-
-static char BHTWidenedWidthKey;
-
-static NSHashTable<UIView*>* BHTWidenedCarousels(void) {
-    static NSHashTable<UIView*>* views;
-    if (!views) views = [NSHashTable weakObjectsHashTable];
-    return views;
-}
-
-// The timeline list runs to the side strip: returns the strip's width.
-static CGFloat BHTListStripBleed(UIScrollView* list) {
-    UIWindow* window = list.window;
-    CGFloat strip = window.safeAreaInsets.right;
-    if (strip < 44.0 || !NFBLiquidGlassEnabled()) return 0.0;
-    CGRect rect = [list convertRect:list.bounds toView:nil];
-    // From the top (so unclipped rows don't draw over a header above it) to the
-    // strip. Lists stop short of the bottom (34pt on the outer screen).
-    BOOL fills = fabs(CGRectGetMaxX(rect) - (CGRectGetWidth(window.bounds) - strip)) < 2.0 && CGRectGetMinY(rect) < 1.0;
-    return fills ? strip : 0.0;
-}
-
-void BHTBleedCarousel(UIScrollView* scroll) {
-    static Class listClass;
-    if (!listClass) listClass = NSClassFromString(@"TFNTableView");
-    if ([scroll isKindOfClass:listClass]) {
-        // Back in the split (or off the strip): clip again.
-        if (![BHTUnclippedViews() containsObject:scroll] || BHTListStripBleed(scroll) > 0.0) return;
-        for (UIView* view in BHTUnclippedViews().allObjects) {
-            if (view != scroll && ![view isDescendantOfView:scroll]) continue;
-            view.clipsToBounds = YES;
-            [BHTUnclippedViews() removeObject:view];
-        }
-        return;
-    }
-    // X's media carousel (TweetMediaAttachments' CarouselScrollView). Its frame isn't
-    // flush with the list's edge (9pt either side), so it's matched by name.
-    static Class carouselClass;
-    if (!carouselClass) {
-        carouselClass = NSClassFromString(@"_TtC21TweetMediaAttachmentsP33_6CAF7C887196233EB6136C8EB3D77FBD18CarouselScrollView");
-    }
-    // A paging one pages by its width, so widening it would misalign its pages.
-    if (!carouselClass || ![scroll isKindOfClass:carouselClass] || scroll.pagingEnabled || !scroll.window) return;
-    UIScrollView* list = nil;
-    NSUInteger depth = 0;
-    for (UIView* view = scroll.superview; view && !list && depth < 12; view = view.superview, depth++) {
-        if ([view isKindOfClass:listClass]) list = (UIScrollView*)view;
-    }
-    CGFloat bleed = list ? BHTListStripBleed(list) : 0.0;
-    // X lays it out again now and then; widen whatever width X last gave it.
-    NSNumber* widened = objc_getAssociatedObject(scroll, &BHTWidenedWidthKey);
-    if (bleed <= 0.0 || (widened && fabs(widened.doubleValue - CGRectGetWidth(scroll.frame)) < 0.5)) return;
-    CGRect frame = scroll.frame;
-    frame.size.width += bleed;
-    objc_setAssociatedObject(scroll, &BHTWidenedWidthKey, @(frame.size.width), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    scroll.frame = frame;
-    [BHTWidenedCarousels() addObject:scroll];
-    for (UIView* view = scroll.superview; view; view = view.superview) {
-        if (view.clipsToBounds) {
-            view.clipsToBounds = NO;
-            [BHTUnclippedViews() addObject:view];
-        }
-        if (view == list) break;
     }
 }

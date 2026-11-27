@@ -882,15 +882,6 @@ static void BHTPlaceColumn(UIView* column, CGRect frame) {
 
 %end
 
-%hook UIScrollView
-
-- (void)layoutSubviews {
-    %orig;
-    BHTBleedCarousel((UIScrollView*)self);
-}
-
-%end
-
 %hook TFNTableView
 
 - (void)setContentInset:(UIEdgeInsets)inset {
