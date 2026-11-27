@@ -90,7 +90,9 @@ The portable, app-agnostic version of what's below is the skill
   button on the next screen, and untracked hides left profiles with no back button or an empty circle.
 - Taps at the top of a post: X's `XNavigation.NavigationBarView` overrides hitTest and answered taps
   even while hidden (its tap-to-scroll-to-top bounced the post instead of opening the author; the debug
-  report's "Taps at x=60" showed it). Its hitTest (and ChromeBackgroundView's) returns nil when hidden.
+  report's "Taps at x=60" showed it). Its hitTest (and ChromeBackgroundView's) returns nil when hidden
+  or on a managed post, and `XNavigation.NavigationBarHostView` (which holds it) passes through taps
+  that would land on itself. Hiding alone wasn't enough: the tap still didn't reach the post.
 - Leaving a post: X's header and back buttons are restored in the transition's completion (not if
   cancelled), and `BHTNavigationShowsManagedPost` also counts the transition's from-controller, so the
   "Post" header doesn't reappear over the post as it slides away.
@@ -99,6 +101,12 @@ The portable, app-agnostic version of what's below is the skill
   X's bar (position/transform/bounds) notices the page sliding, then the bar fades out and a snapshot
   of it rides on the page (`slideSnapshot`), removed once the page is drawn back in place. Hosting the
   bar inside the sliding view made it horizontal or crashed (UIKit's child-view hierarchy check).
+  Only a full-size sideways offset counts as a slide, and a window size change (fold/unfold, app
+  switching) drops the image: it got stuck showing the old layout's rail mid-screen.
+- Media carousels: X runs them to the list's right edge, which in the single column is the side strip.
+  A UIScrollView layoutSubviews hook (`BHTBleedCarousel`) widens horizontal scrollers inside a
+  `TFNTableView` that ends at the strip (full height) by the strip width, and unclips their ancestors
+  up to the list (restored when the list stops ending at the strip, e.g. in the split).
 - The debug report works on any screen: taps at the top (x=60), every "Back" control with its two
   ancestors and subviews (hidden/alpha, "(tweak)" if the tweak hid it), and the top strip.
 - To inspect class names on device: turn on the `flex_twitter` setting (bundled FLEX), then search

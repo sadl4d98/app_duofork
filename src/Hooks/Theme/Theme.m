@@ -1428,6 +1428,7 @@ static const CGFloat BHTGlassTabRailPadding = 8.0;
 @property (nonatomic, strong) UIView* slideSnapshot;
 @property (nonatomic, strong) CADisplayLink* settleLink;
 @property (nonatomic) CFTimeInterval settleStart;
+@property (nonatomic) CGSize slideWindowSize;
 - (void)layoutCompose;
 @end
 
@@ -1761,7 +1762,16 @@ static char BHTSlideContext;
     UIView* slider = self.slider;
     if (!slider.window) return;
     CGRect rect = [slider convertRect:slider.bounds toView:nil];
-    BOOL away = fabs(CGRectGetMinX(rect)) > 0.5 || fabs(CGRectGetMinY(rect)) > 0.5;
+    CGSize window = slider.window.bounds.size;
+    // The window changed size (fold/unfold, app switching): not a side menu. The
+    // image would show the old layout, so drop it and let the bar lay itself out.
+    if (self.slideSnapshot && !CGSizeEqualToSize(window, self.slideWindowSize)) {
+        [self endSlide];
+        return;
+    }
+    // A side menu slides the page sideways at full size; anything else is a re-layout.
+    BOOL away = fabs(CGRectGetMinX(rect)) > 0.5 && fabs(CGRectGetMinY(rect)) < 0.5 &&
+                fabs(CGRectGetWidth(rect) - window.width) < 1.0 && fabs(CGRectGetHeight(rect) - window.height) < 1.0;
     if (away) {
         [self.settleLink invalidate];
         self.settleLink = nil;
@@ -1772,6 +1782,7 @@ static char BHTSlideContext;
             snapshot.userInteractionEnabled = NO;
             [slider addSubview:snapshot];
             self.slideSnapshot = snapshot;
+            self.slideWindowSize = window;
             self.container.alpha = 0.0;
         }
     } else if (self.slideSnapshot && !self.settleLink) {

@@ -638,3 +638,68 @@ void BHTScrollPastFocalIfNeeded(UIView* focal) {
         return;
     }
 }
+
+// MARK: - Full-width media carousels
+
+// X runs timeline media carousels to the list's right edge. With the list ending
+// at the side strip, they stopped there; like X's own layout, they now run on under
+// the rail to the screen edge (single column only: in the split the left list ends
+// at the hinge).
+
+static NSHashTable<UIView*>* BHTUnclippedViews(void) {
+    static NSHashTable<UIView*>* views;
+    if (!views) views = [NSHashTable weakObjectsHashTable];
+    return views;
+}
+
+// The timeline list fills the window up to the side strip: returns the strip's width.
+static CGFloat BHTListStripBleed(UIScrollView* list) {
+    UIWindow* window = list.window;
+    CGFloat strip = window.safeAreaInsets.right;
+    if (strip < 44.0 || !NFBLiquidGlassEnabled()) return 0.0;
+    CGRect rect = [list convertRect:list.bounds toView:nil];
+    BOOL fills = fabs(CGRectGetMaxX(rect) - (CGRectGetWidth(window.bounds) - strip)) < 2.0 && CGRectGetMinY(rect) < 1.0 &&
+                 CGRectGetMaxY(rect) > CGRectGetHeight(window.bounds) - 1.0;
+    return fills ? strip : 0.0;
+}
+
+void BHTBleedCarousel(UIScrollView* scroll) {
+    static Class listClass;
+    if (!listClass) listClass = NSClassFromString(@"TFNTableView");
+    if ([scroll isKindOfClass:listClass]) {
+        // Back in the split (or off the strip): clip again.
+        if (![BHTUnclippedViews() containsObject:scroll] || BHTListStripBleed(scroll) > 0.0) return;
+        for (UIView* view in BHTUnclippedViews().allObjects) {
+            if (view != scroll && ![view isDescendantOfView:scroll]) continue;
+            view.clipsToBounds = YES;
+            [BHTUnclippedViews() removeObject:view];
+        }
+        return;
+    }
+    // Carousels scroll sideways only.
+    if (scroll.contentSize.width <= CGRectGetWidth(scroll.bounds) + 1.0 ||
+        scroll.contentSize.height > CGRectGetHeight(scroll.bounds) + 1.0 || !scroll.window) {
+        return;
+    }
+    UIScrollView* list = nil;
+    NSUInteger depth = 0;
+    for (UIView* view = scroll.superview; view && !list && depth < 12; view = view.superview, depth++) {
+        if ([view isKindOfClass:listClass]) list = (UIScrollView*)view;
+    }
+    CGFloat bleed = list ? BHTListStripBleed(list) : 0.0;
+    if (bleed <= 0.0) return;
+    // Only ones X runs to the list's edge (already-extended ones end at the screen's).
+    CGRect rect = [scroll convertRect:scroll.bounds toView:nil];
+    CGRect listRect = [list convertRect:list.bounds toView:nil];
+    if (fabs(CGRectGetMaxX(rect) - CGRectGetMaxX(listRect)) >= 2.0) return;
+    CGRect frame = scroll.frame;
+    frame.size.width += bleed;
+    scroll.frame = frame;
+    for (UIView* view = scroll.superview; view; view = view.superview) {
+        if (view.clipsToBounds) {
+            view.clipsToBounds = NO;
+            [BHTUnclippedViews() addObject:view];
+        }
+        if (view == list) break;
+    }
+}

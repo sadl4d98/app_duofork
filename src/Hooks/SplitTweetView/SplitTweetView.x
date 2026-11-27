@@ -836,7 +836,7 @@ static void BHTPlaceColumn(UIView* column, CGRect frame) {
 // X's override answers taps even while hidden (the header's tap-to-scroll-to-top
 // stole taps on the post's author), so hidden means hidden here too.
 - (UIView*)hitTest:(CGPoint)point withEvent:(UIEvent*)event {
-    return ((UIView*)self).hidden ? nil : %orig;
+    return ((UIView*)self).hidden || BHTIsPostChrome((UIView*)self) ? nil : %orig;
 }
 
 %end
@@ -860,7 +860,27 @@ static void BHTPlaceColumn(UIView* column, CGRect frame) {
 // X's override answers taps even while hidden (the header's tap-to-scroll-to-top
 // stole taps on the post's author), so hidden means hidden here too.
 - (UIView*)hitTest:(CGPoint)point withEvent:(UIEvent*)event {
-    return ((UIView*)self).hidden ? nil : %orig;
+    return ((UIView*)self).hidden || BHTIsPostChrome((UIView*)self) ? nil : %orig;
+}
+
+%end
+
+// Holds X's header; with the header out of the way it caught the tap itself (so
+// nothing under it got it), so it passes taps through on a managed post.
+%hook _TtC11XNavigation21NavigationBarHostView
+
+- (UIView*)hitTest:(CGPoint)point withEvent:(UIEvent*)event {
+    UIView* hit = %orig;
+    return hit == (UIView*)self && BHTIsPostChrome((UIView*)self) ? nil : hit;
+}
+
+%end
+
+%hook UIScrollView
+
+- (void)layoutSubviews {
+    %orig;
+    BHTBleedCarousel((UIScrollView*)self);
 }
 
 %end

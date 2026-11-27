@@ -26,5 +26,6 @@ void BHTConversationDidAppear(UIViewController* conversation);
 void BHTNavigationTitleDidLayout(UIView* title);
 UIEdgeInsets BHTPostTableInset(UIScrollView* table, UIEdgeInsets inset);
 void BHTHideTopEdgeEffect(UIScrollView* scroll);
+void BHTBleedCarousel(UIScrollView* scroll);
 BOOL BHTIsPostChrome(UIView* view);
 void BHTPostChromeChanged(UIView* view);
