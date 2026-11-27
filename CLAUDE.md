@@ -109,9 +109,11 @@ The portable, app-agnostic version of what's below is the skill
   A UIScrollView layoutSubviews hook (`BHTBleedCarousel`) widens horizontal scrollers inside a
   `TFNTableView` that starts at the top and ends at the strip by the strip width (lists stop 34pt
   short of the bottom on the outer screen, so a full-height check never matched), and unclips their ancestors
-  up to the list (restored when the list stops ending at the strip, e.g. in the split). Only
-  UICollectionViews: matching any sideways scroller shifted the top of the timeline down. Unconfirmed
-  which view X's carousel is; the debug report marks widened scrollers "WIDENED".
+  up to the list (restored when the list stops ending at the strip, e.g. in the split). X 12.46's
+  carousel is `TweetMediaAttachments…CarouselScrollView` (a UIScrollView, clips) inside
+  `MultiMediaCarouselView`, matched by class name: its frame is 9pt short of or past the list's edge,
+  so an edge check never matched. The width it was given is stored so X's re-layouts get widened
+  again; paging ones are skipped. The debug report marks widened ones "WIDENED".
 - `EnumerateSubviewsRecursively` (HookHelpers) stops 15 levels down and skips hidden views, which is
   above the timeline's cells; the debug report walks views itself.
 - The native bar's container sits directly above the root subview holding X's interface, not at the

@@ -372,6 +372,16 @@ NSString* BHTPostLayoutReport(UIWindow* screenWindow) {
         [report appendFormat:@"%@ %@ content %.0fx%.0f clips %d%@", BHTShortClassName(scroll), BHTRectText(rect),
                              scroll.contentSize.width, scroll.contentSize.height, scroll.clipsToBounds,
                              [BHTWidenedCarousels() containsObject:scroll] ? @" WIDENED" : @""];
+        if (!sideways) {
+            UIViewController* owner = nil;
+            for (UIResponder* responder = scroll.nextResponder; responder && !owner; responder = responder.nextResponder)
+                if ([responder isKindOfClass:UIViewController.class]) owner = (UIViewController*)responder;
+            [report appendFormat:@" inset %@ adjusted %@ offset %.0f safe %@ behavior %ld vc %@ additional %@",
+                                 BHTInsetsText(scroll.contentInset), BHTInsetsText(scroll.adjustedContentInset),
+                                 scroll.contentOffset.y, BHTInsetsText(scroll.safeAreaInsets),
+                                 (long)scroll.contentInsetAdjustmentBehavior, NSStringFromClass(owner.class),
+                                 BHTInsetsText(owner.additionalSafeAreaInsets)];
+        }
         UIView* ancestor = scroll.superview;
         for (NSUInteger depth = 0; ancestor && depth < 3; depth++, ancestor = ancestor.superview)
             [report appendFormat:@" < %@", BHTShortClassName(ancestor)];
@@ -696,6 +706,8 @@ static NSHashTable<UIView*>* BHTUnclippedViews(void) {
     return views;
 }
 
+static char BHTWidenedWidthKey;
+
 static NSHashTable<UIView*>* BHTWidenedCarousels(void) {
     static NSHashTable<UIView*>* views;
     if (!views) views = [NSHashTable weakObjectsHashTable];
@@ -727,25 +739,26 @@ void BHTBleedCarousel(UIScrollView* scroll) {
         }
         return;
     }
-    // Carousels are collection views that scroll sideways only (text views also
-    // report wide content, and widening other scrollers shifted the timeline).
-    if (![scroll isKindOfClass:UICollectionView.class] || scroll.contentSize.width <= CGRectGetWidth(scroll.bounds) + 1.0 ||
-        scroll.contentSize.height > CGRectGetHeight(scroll.bounds) + 1.0 || !scroll.window) {
-        return;
+    // X's media carousel (TweetMediaAttachments' CarouselScrollView). Its frame isn't
+    // flush with the list's edge (9pt either side), so it's matched by name.
+    static Class carouselClass;
+    if (!carouselClass) {
+        carouselClass = NSClassFromString(@"_TtC21TweetMediaAttachmentsP33_6CAF7C887196233EB6136C8EB3D77FBD18CarouselScrollView");
     }
+    // A paging one pages by its width, so widening it would misalign its pages.
+    if (!carouselClass || ![scroll isKindOfClass:carouselClass] || scroll.pagingEnabled || !scroll.window) return;
     UIScrollView* list = nil;
     NSUInteger depth = 0;
     for (UIView* view = scroll.superview; view && !list && depth < 12; view = view.superview, depth++) {
         if ([view isKindOfClass:listClass]) list = (UIScrollView*)view;
     }
     CGFloat bleed = list ? BHTListStripBleed(list) : 0.0;
-    if (bleed <= 0.0) return;
-    // Only ones X runs to the list's edge (already-extended ones end at the screen's).
-    CGRect rect = [scroll convertRect:scroll.bounds toView:nil];
-    CGRect listRect = [list convertRect:list.bounds toView:nil];
-    if (fabs(CGRectGetMaxX(rect) - CGRectGetMaxX(listRect)) >= 2.0) return;
+    // X lays it out again now and then; widen whatever width X last gave it.
+    NSNumber* widened = objc_getAssociatedObject(scroll, &BHTWidenedWidthKey);
+    if (bleed <= 0.0 || (widened && fabs(widened.doubleValue - CGRectGetWidth(scroll.frame)) < 0.5)) return;
     CGRect frame = scroll.frame;
     frame.size.width += bleed;
+    objc_setAssociatedObject(scroll, &BHTWidenedWidthKey, @(frame.size.width), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     scroll.frame = frame;
     [BHTWidenedCarousels() addObject:scroll];
     for (UIView* view = scroll.superview; view; view = view.superview) {
