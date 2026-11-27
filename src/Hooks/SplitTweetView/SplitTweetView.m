@@ -335,7 +335,7 @@ NSString* BHTPostLayoutReport(UIWindow* screenWindow) {
     }
     [report appendFormat:@"Tweak-hidden %lu\n", (unsigned long)BHTHiddenBackButtons().count];
     [report appendString:@"\nTaps at x=60:\n"];
-    for (CGFloat y = 60.0; y <= 220.0; y += 40.0) {
+    for (CGFloat y = 20.0; y <= 180.0; y += 40.0) {
         UIView* hit = [window hitTest:CGPointMake(60.0, y) withEvent:nil];
         [report appendFormat:@"y%.0f", y];
         for (NSUInteger depth = 0; hit && depth < 5; depth++, hit = hit.superview) {
@@ -347,6 +347,34 @@ NSString* BHTPostLayoutReport(UIWindow* screenWindow) {
         }
         [report appendString:@"\n"];
     }
+    // Every gesture that sees a tap at the top of the post (on the hit view's whole
+    // ancestor chain), with its actions: one of them may still scroll to the top.
+    [report appendString:@"\nGestures at (60,40):\n"];
+    for (UIView* view = [window hitTest:CGPointMake(60.0, 40.0) withEvent:nil]; view; view = view.superview) {
+        for (UIGestureRecognizer* gesture in view.gestureRecognizers) {
+            if (!gesture.enabled) continue;
+            NSString* text = gesture.description;
+            NSRange actions = [text rangeOfString:@"action="];
+            NSString* action = actions.location == NSNotFound ? @"" : [text substringFromIndex:actions.location];
+            [report appendFormat:@"%@ on %@ %@\n", NSStringFromClass(gesture.class), NSStringFromClass(view.class),
+                                 [action substringToIndex:MIN(action.length, (NSUInteger)80)]];
+        }
+    }
+    // Sideways scrollers on screen (media carousels), and the lists they sit in.
+    [report appendString:@"\nSideways scrollers:\n"];
+    EnumerateSubviewsRecursively(window, ^(UIView* view) {
+        if (![view isKindOfClass:UIScrollView.class] || report.length > 6000) return;
+        UIScrollView* scroll = (UIScrollView*)view;
+        CGRect rect = [scroll convertRect:scroll.bounds toView:nil];
+        BOOL sideways = scroll.contentSize.width > CGRectGetWidth(scroll.bounds) + 1.0;
+        if (!sideways && ![NSStringFromClass(scroll.class) isEqualToString:@"TFNTableView"]) return;
+        [report appendFormat:@"%@ %@ content %.0fx%.0f clips %d", NSStringFromClass(scroll.class), BHTRectText(rect),
+                             scroll.contentSize.width, scroll.contentSize.height, scroll.clipsToBounds];
+        UIView* ancestor = scroll.superview;
+        for (NSUInteger depth = 0; ancestor && depth < 4; depth++, ancestor = ancestor.superview)
+            [report appendFormat:@" < %@", NSStringFromClass(ancestor.class)];
+        [report appendString:@"\n"];
+    });
     // Every "Back" control with its circle, and what's inside it.
     [report appendString:@"\nBack buttons:\n"];
     for (UIWindow* each in window.windowScene.windows) {
