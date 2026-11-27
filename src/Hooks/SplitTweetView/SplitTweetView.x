@@ -871,7 +871,13 @@ static void BHTPlaceColumn(UIView* column, CGRect frame) {
 
 - (UIView*)hitTest:(CGPoint)point withEvent:(UIEvent*)event {
     UIView* hit = %orig;
-    return hit == (UIView*)self && BHTIsPostChrome((UIView*)self) ? nil : hit;
+    if (!hit || !BHTIsPostChrome((UIView*)self)) return hit;
+    // It hands back the header itself without asking it, hidden or not, so any
+    // tap landing on itself or on a hidden header goes to the post underneath.
+    for (UIView* view = hit; view && view != (UIView*)self; view = view.superview) {
+        if (view.hidden) return nil;
+    }
+    return hit == (UIView*)self ? nil : hit;
 }
 
 %end

@@ -347,23 +347,10 @@ NSString* BHTPostLayoutReport(UIWindow* screenWindow) {
         }
         [report appendString:@"\n"];
     }
-    // Every gesture that sees a tap at the top of the post (on the hit view's whole
-    // ancestor chain), with its actions: one of them may still scroll to the top.
-    [report appendString:@"\nGestures at (60,40):\n"];
-    for (UIView* view = [window hitTest:CGPointMake(60.0, 40.0) withEvent:nil]; view; view = view.superview) {
-        for (UIGestureRecognizer* gesture in view.gestureRecognizers) {
-            if (!gesture.enabled) continue;
-            NSString* text = gesture.description;
-            NSRange actions = [text rangeOfString:@"action="];
-            NSString* action = actions.location == NSNotFound ? @"" : [text substringFromIndex:actions.location];
-            [report appendFormat:@"%@ on %@ %@\n", NSStringFromClass(gesture.class), NSStringFromClass(view.class),
-                                 [action substringToIndex:MIN(action.length, (NSUInteger)80)]];
-        }
-    }
     // Sideways scrollers on screen (media carousels), and the lists they sit in.
     [report appendString:@"\nSideways scrollers:\n"];
     EnumerateSubviewsRecursively(window, ^(UIView* view) {
-        if (![view isKindOfClass:UIScrollView.class] || report.length > 6000) return;
+        if (![view isKindOfClass:UIScrollView.class] || report.length > 9000) return;
         UIScrollView* scroll = (UIScrollView*)view;
         CGRect rect = [scroll convertRect:scroll.bounds toView:nil];
         BOOL sideways = scroll.contentSize.width > CGRectGetWidth(scroll.bounds) + 1.0;
@@ -375,11 +362,25 @@ NSString* BHTPostLayoutReport(UIWindow* screenWindow) {
             [report appendFormat:@" < %@", NSStringFromClass(ancestor.class)];
         [report appendString:@"\n"];
     });
+    // Every gesture that sees a tap at the top of the post (on the hit view's whole
+    // ancestor chain), with its actions: one of them may still scroll to the top.
+    [report appendString:@"\nGestures at (60,40):\n"];
+    for (UIView* view = [window hitTest:CGPointMake(60.0, 40.0) withEvent:nil]; view && view != window;
+         view = view.superview) {
+        for (UIGestureRecognizer* gesture in view.gestureRecognizers) {
+            if (!gesture.enabled) continue;
+            NSString* text = gesture.description;
+            NSRange actions = [text rangeOfString:@"action="];
+            NSString* action = actions.location == NSNotFound ? @"" : [text substringFromIndex:actions.location];
+            [report appendFormat:@"%@ on %@ %@\n", NSStringFromClass(gesture.class), NSStringFromClass(view.class),
+                                 [action substringToIndex:MIN(action.length, (NSUInteger)80)]];
+        }
+    }
     // Every "Back" control with its circle, and what's inside it.
     [report appendString:@"\nBack buttons:\n"];
     for (UIWindow* each in window.windowScene.windows) {
         EnumerateSubviewsRecursively(each, ^(UIView* view) {
-            if (![view.accessibilityLabel isEqualToString:@"Back"] || report.length > 4000) return;
+            if (![view.accessibilityLabel isEqualToString:@"Back"] || report.length > 12000) return;
             CGRect rect = [view convertRect:view.bounds toView:nil];
             [report appendFormat:@"%@ %@\n", BHTRectText(rect), BHTViewStateText(view)];
             for (UIView* inner in view.subviews)
@@ -680,14 +681,15 @@ static NSHashTable<UIView*>* BHTUnclippedViews(void) {
     return views;
 }
 
-// The timeline list fills the window up to the side strip: returns the strip's width.
+// The timeline list runs to the side strip: returns the strip's width.
 static CGFloat BHTListStripBleed(UIScrollView* list) {
     UIWindow* window = list.window;
     CGFloat strip = window.safeAreaInsets.right;
     if (strip < 44.0 || !NFBLiquidGlassEnabled()) return 0.0;
     CGRect rect = [list convertRect:list.bounds toView:nil];
-    BOOL fills = fabs(CGRectGetMaxX(rect) - (CGRectGetWidth(window.bounds) - strip)) < 2.0 && CGRectGetMinY(rect) < 1.0 &&
-                 CGRectGetMaxY(rect) > CGRectGetHeight(window.bounds) - 1.0;
+    // From the top (so unclipped rows don't draw over a header above it) to the
+    // strip. Lists stop short of the bottom (34pt on the outer screen).
+    BOOL fills = fabs(CGRectGetMaxX(rect) - (CGRectGetWidth(window.bounds) - strip)) < 2.0 && CGRectGetMinY(rect) < 1.0;
     return fills ? strip : 0.0;
 }
 
