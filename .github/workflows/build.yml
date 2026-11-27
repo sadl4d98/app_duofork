@@ -13,9 +13,9 @@ on:
         default: "15.0"
         required: true
       decrypted_ipa_url:
-        description: "Direct URL of an X IPA"
+        description: "Direct URL of an X IPA (empty: reuse the last one downloaded)"
         default: ""
-        required: true
+        required: false
         type: string
       deploy_format:
         description: "Deployment format"
@@ -121,11 +121,38 @@ jobs:
           echo "version=${TWEAK_VERSION}" >> "$GITHUB_OUTPUT"
           echo "$TWEAK_NAME $TWEAK_VERSION"
 
+      # Keeps the last downloaded IPA so later builds can leave the URL empty
+      # (temporary upload links expire). A new URL gets its own cache entry.
+      - name: X IPA Caching
+        if: inputs.deploy_format == 'sideloaded' || inputs.deploy_format == 'trollstore'
+        id: ipa_cache
+        uses: actions/cache@v6
+        with:
+          path: x-ipa
+          key: x-ipa-${{ inputs.decrypted_ipa_url || 'reuse' }}
+          restore-keys: x-ipa-
+
       - name: Prepare X IPA
         if: inputs.deploy_format == 'sideloaded' || inputs.deploy_format == 'trollstore'
         id: x_version
         run: |
-          wget "$IPA_URL" --no-verbose -O main/packages/com.atebits.Tweetie2.ipa
+          mkdir -p x-ipa
+          if [ -n "$IPA_URL" ] && [ "$CACHE_HIT" != "true" ]; then
+            if wget "$IPA_URL" --no-verbose -O x-ipa/download.ipa; then
+              mv x-ipa/download.ipa x-ipa/com.atebits.Tweetie2.ipa
+            elif [ -f x-ipa/com.atebits.Tweetie2.ipa ]; then
+              echo "::warning::Couldn't download the IPA (expired link?); using the cached one."
+            else
+              exit 1
+            fi
+            rm -f x-ipa/download.ipa
+          elif [ ! -f x-ipa/com.atebits.Tweetie2.ipa ]; then
+            echo "::error::No IPA URL given and no cached IPA from an earlier build."
+            exit 1
+          else
+            echo "Using the cached X IPA."
+          fi
+          cp x-ipa/com.atebits.Tweetie2.ipa main/packages/com.atebits.Tweetie2.ipa
           unzip -q main/packages/com.atebits.Tweetie2.ipa -d main/tmp
           X_VERSION=$(grep -A 1 '<key>CFBundleShortVersionString</key>' main/tmp/Payload/Twitter.app/Info.plist |
             grep '<string>' | awk -F'[><]' '{print $3}')
@@ -138,6 +165,7 @@ jobs:
             awk '/sdk/ {print "::notice title=X build SDK::" $0}' || true
         env:
           IPA_URL: ${{ inputs.decrypted_ipa_url }}
+          CACHE_HIT: ${{ steps.ipa_cache.outputs.cache-hit }}
 
       - name: Prepare Image Pack
         if: inputs.resource_pack_url != '' && (inputs.deploy_format == 'sideloaded' || inputs.deploy_format == 'trollstore')

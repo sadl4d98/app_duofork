@@ -154,4 +154,8 @@ The portable, app-agnostic version of what's below is the skill
 
 - `v7 Tests` (on PR / push to `v7`) compiles the tweak on macOS runners with the iOS 26.5 SDK.
 - `Build Tweak` (manual) needs a direct link to a decrypted X IPA (X 12.46 matches current code).
-  The user uploads it to litterbox.catbox.moe, which gives a temporary direct link.
+  The user uploads it to litterbox.catbox.moe, which gives a temporary direct link (1h by default;
+  links expired between builds several times). The workflow caches the last downloaded IPA
+  (`x-ipa` cache), so after one successful download the URL can be left empty, and an expired URL
+  falls back to the cache. Don't commit the IPA (~300MB, over GitHub's 100MB limit, and it's X's app).
+  easyfileupload.io links are download pages, not files; catbox.moe (permanent) caps uploads at 200MB.
