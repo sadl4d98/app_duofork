@@ -300,6 +300,14 @@ static void BHTReportViews(UIView* view, NSMutableString* top, NSMutableString* 
     }
 }
 
+static NSHashTable<UIView*>* BHTWidenedCarousels(void);
+
+// Class name without Swift's long private-type prefix.
+static NSString* BHTShortClassName(UIView* view) {
+    NSString* name = NSStringFromClass(view.class);
+    return name.length > 48 ? [@"…" stringByAppendingString:[name substringFromIndex:name.length - 40]] : name;
+}
+
 // A view and its two nearest ancestors: class, hidden, alpha.
 static NSString* BHTViewStateText(UIView* view) {
     NSMutableString* text = [NSMutableString new];
@@ -348,20 +356,27 @@ NSString* BHTPostLayoutReport(UIWindow* screenWindow) {
         [report appendString:@"\n"];
     }
     // Sideways scrollers on screen (media carousels), and the lists they sit in.
+    // Own walk: EnumerateSubviewsRecursively stops 15 levels down, above the timeline.
     [report appendString:@"\nSideways scrollers:\n"];
-    EnumerateSubviewsRecursively(window, ^(UIView* view) {
-        if (![view isKindOfClass:UIScrollView.class] || report.length > 9000) return;
+    NSMutableArray<UIView*>* stack = [NSMutableArray arrayWithObject:window];
+    while (stack.count && report.length < 9000) {
+        UIView* view = stack.lastObject;
+        [stack removeLastObject];
+        if (view.hidden || view.alpha < 0.01) continue;
+        [stack addObjectsFromArray:view.subviews];
+        if (![view isKindOfClass:UIScrollView.class] || [view isKindOfClass:UITextView.class]) continue;
         UIScrollView* scroll = (UIScrollView*)view;
-        CGRect rect = [scroll convertRect:scroll.bounds toView:nil];
         BOOL sideways = scroll.contentSize.width > CGRectGetWidth(scroll.bounds) + 1.0;
-        if (!sideways && ![NSStringFromClass(scroll.class) isEqualToString:@"TFNTableView"]) return;
-        [report appendFormat:@"%@ %@ content %.0fx%.0f clips %d", NSStringFromClass(scroll.class), BHTRectText(rect),
-                             scroll.contentSize.width, scroll.contentSize.height, scroll.clipsToBounds];
+        if (!sideways && ![NSStringFromClass(scroll.class) isEqualToString:@"TFNTableView"]) continue;
+        CGRect rect = [scroll convertRect:scroll.bounds toView:nil];
+        [report appendFormat:@"%@ %@ content %.0fx%.0f clips %d%@", BHTShortClassName(scroll), BHTRectText(rect),
+                             scroll.contentSize.width, scroll.contentSize.height, scroll.clipsToBounds,
+                             [BHTWidenedCarousels() containsObject:scroll] ? @" WIDENED" : @""];
         UIView* ancestor = scroll.superview;
-        for (NSUInteger depth = 0; ancestor && depth < 4; depth++, ancestor = ancestor.superview)
-            [report appendFormat:@" < %@", NSStringFromClass(ancestor.class)];
+        for (NSUInteger depth = 0; ancestor && depth < 3; depth++, ancestor = ancestor.superview)
+            [report appendFormat:@" < %@", BHTShortClassName(ancestor)];
         [report appendString:@"\n"];
-    });
+    }
     // Every gesture that sees a tap at the top of the post (on the hit view's whole
     // ancestor chain), with its actions: one of them may still scroll to the top.
     [report appendString:@"\nGestures at (60,40):\n"];
@@ -681,6 +696,12 @@ static NSHashTable<UIView*>* BHTUnclippedViews(void) {
     return views;
 }
 
+static NSHashTable<UIView*>* BHTWidenedCarousels(void) {
+    static NSHashTable<UIView*>* views;
+    if (!views) views = [NSHashTable weakObjectsHashTable];
+    return views;
+}
+
 // The timeline list runs to the side strip: returns the strip's width.
 static CGFloat BHTListStripBleed(UIScrollView* list) {
     UIWindow* window = list.window;
@@ -706,8 +727,9 @@ void BHTBleedCarousel(UIScrollView* scroll) {
         }
         return;
     }
-    // Carousels scroll sideways only.
-    if (scroll.contentSize.width <= CGRectGetWidth(scroll.bounds) + 1.0 ||
+    // Carousels are collection views that scroll sideways only (text views also
+    // report wide content, and widening other scrollers shifted the timeline).
+    if (![scroll isKindOfClass:UICollectionView.class] || scroll.contentSize.width <= CGRectGetWidth(scroll.bounds) + 1.0 ||
         scroll.contentSize.height > CGRectGetHeight(scroll.bounds) + 1.0 || !scroll.window) {
         return;
     }
@@ -725,6 +747,7 @@ void BHTBleedCarousel(UIScrollView* scroll) {
     CGRect frame = scroll.frame;
     frame.size.width += bleed;
     scroll.frame = frame;
+    [BHTWidenedCarousels() addObject:scroll];
     for (UIView* view = scroll.superview; view; view = view.superview) {
         if (view.clipsToBounds) {
             view.clipsToBounds = NO;

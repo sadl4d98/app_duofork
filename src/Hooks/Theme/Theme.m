@@ -1706,7 +1706,18 @@ static UIViewController* BHTTopControllerForView(UIView* view) {
         [self.container addSubview:controller.view];
         [controller didMoveToParentViewController:parent];
     }
-    if (parent.view.subviews.lastObject != self.container) [parent.view bringSubviewToFront:self.container];
+    // Just above X's own interface, not on top of everything: overlays X adds later
+    // (its launch animation) belong above the bar.
+    UIView* main = self.bar;
+    while (main && main.superview != parent.view)
+        main = main.superview;
+    NSArray<UIView*>* siblings = parent.view.subviews;
+    NSUInteger index = main ? [siblings indexOfObject:main] : NSNotFound;
+    if (index == NSNotFound) {
+        if (siblings.lastObject != self.container) [parent.view bringSubviewToFront:self.container];
+    } else if (index + 1 >= siblings.count || siblings[index + 1] != self.container) {
+        [parent.view insertSubview:self.container aboveSubview:main];
+    }
     [self watchSlidesUnder:parent.view];
     BHTActiveNativeHost = self;
 }
