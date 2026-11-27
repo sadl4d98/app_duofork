@@ -352,12 +352,20 @@
 %end
 
 // X still reserves the hidden Spaces bar's height (64pt) above the home timeline
-// (Liquid Glass: additionalSafeAreaInsets.top), which showed as an empty gap
-// once the bar loaded.
+// (Liquid Glass: additionalSafeAreaInsets.top), an empty gap once the bar loads.
+// Zeroing it froze the app (X kept setting it again), so for now only record who
+// sets it, for the debug report.
+NSString* BHTHomeTopInsetTrace;
+
 %hook THFHomeTimelineItemsViewController
 
 - (void)setAdditionalSafeAreaInsets:(UIEdgeInsets)insets {
-    if ([BHTSettings boolForKey:@"hide_spaces"]) insets.top = 0.0;
+    if (insets.top > 0.0 && !BHTHomeTopInsetTrace) {
+        NSArray<NSString*>* frames = [NSThread callStackSymbols];
+        BHTHomeTopInsetTrace = [NSString stringWithFormat:@"top %.0f from:\n%@", insets.top,
+                                                          [[frames subarrayWithRange:NSMakeRange(1, MIN((NSUInteger)14, frames.count - 1))]
+                                                              componentsJoinedByString:@"\n"]];
+    }
     %orig(insets);
 }
 

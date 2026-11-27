@@ -114,7 +114,10 @@ The portable, app-agnostic version of what's below is the skill
   top bar and logo).
 - Gap at the top of the home timeline: with `hide_spaces`, X still sets
   `THFHomeTimelineItemsViewController.additionalSafeAreaInsets.top` to the Spaces bar's height (64pt)
-  once it loads; HideUI.x zeroes that top while the setting is on.
+  once it loads. **Zeroing it in the setter froze the app** (no touches a few seconds in, when the bar
+  loads; most likely X kept re-setting it). Open: HideUI.x only records who sets it
+  (`BHTHomeTopInsetTrace`), and the debug report lists the Spaces bar controllers' size/hidden/
+  accessory methods, to find a way to stop X reserving it.
 - `EnumerateSubviewsRecursively` (HookHelpers) stops 15 levels down and skips hidden views, which is
   above the timeline's cells; the debug report walks views itself.
 - The native bar's container sits directly above the root subview holding X's interface, not at the

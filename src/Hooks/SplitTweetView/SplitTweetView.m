@@ -398,6 +398,27 @@ NSString* BHTPostLayoutReport(UIWindow* screenWindow) {
                                  [action substringToIndex:MIN(action.length, (NSUInteger)80)]];
         }
     }
+    // The hidden Spaces bar's leftover gap: who set it, and what its controllers offer.
+    extern NSString* BHTHomeTopInsetTrace;
+    [report appendFormat:@"\nHome top inset: %@\n", BHTHomeTopInsetTrace ?: @"not set"];
+    for (NSString* name in @[@"_TtC14T1TwitterSwift28FleetLineAccessoryController", @"T1FleetLineHeaderController"]) {
+        Class cls = NSClassFromString(name);
+        if (!cls) continue;
+        NSMutableArray<NSString*>* names = [NSMutableArray new];
+        for (Class each = cls; each && each != NSObject.class; each = class_getSuperclass(each)) {
+            unsigned int count = 0;
+            Method* methods = class_copyMethodList(each, &count);
+            for (unsigned int index = 0; index < count; index++) {
+                NSString* selector = NSStringFromSelector(method_getName(methods[index]));
+                if ([selector rangeOfString:@"(eight|nset|idden|how|ccessory|isible|ize|ayout)" options:NSRegularExpressionSearch].location !=
+                    NSNotFound) {
+                    [names addObject:selector];
+                }
+            }
+            free(methods);
+        }
+        [report appendFormat:@"%@: %@\n", name, [names componentsJoinedByString:@" "]];
+    }
     // Every "Back" control with its circle, and what's inside it.
     [report appendString:@"\nBack buttons:\n"];
     for (UIWindow* each in window.windowScene.windows) {
