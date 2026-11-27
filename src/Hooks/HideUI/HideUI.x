@@ -337,6 +337,18 @@
     return %orig;
 }
 
+// With Liquid Glass this controller also reserves the bar's height (64pt) above the
+// home timeline, even when it's hidden: an empty gap once the bar loads. Don't let it.
+// (Zeroing the inset after it was set froze the app: the divergence check below
+// re-applies it on every layout pass.)
+- (void)_t1_updateTopInsetIfNeeded {
+    if (![BHTSettings boolForKey:@"hide_spaces"]) %orig;
+}
+
+- (void)_t1_reportTopInsetDivergenceIfNeeded {
+    if (![BHTSettings boolForKey:@"hide_spaces"]) %orig;
+}
+
 %end
 
 %hook _TtC14T1TwitterSwift28FleetLineAccessoryController
